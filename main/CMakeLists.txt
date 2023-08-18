@@ -1,3 +1,4 @@
-idf_component_register(SRCS "main.c" "file_server.c" "mount.c"
-                    INCLUDE_DIRS "."
-                    EMBED_FILES "favicon.ico" "upload_script.html")
+set(COMPONENT_SRCS "play_sdcard_music_example.c")
+set(COMPONENT_ADD_INCLUDEDIRS .)
+
+register_component()
