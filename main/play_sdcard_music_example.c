@@ -14,6 +14,7 @@
 #include "sdkconfig.h"
 #include "audio_element.h"
 #include "audio_pipeline.h"
+#include "audio_hal.h"
 #include "audio_event_iface.h"
 #include "audio_common.h"
 #include "fatfs_stream.h"
@@ -187,6 +188,11 @@ void app_main(void)
 
             ESP_LOGI(TAG, "[ * ] Receive music info from mp3 decoder, sample_rates=%d, bits=%d, ch=%d",
                      music_info.sample_rates, music_info.bits, music_info.channels);
+            
+            int volume = 100;
+            audio_hal_set_volume(board_handle->audio_hal, volume);
+            ESP_LOGI(TAG, "[ * ] Receive music volume=%d",
+                     volume);
 
             audio_element_setinfo(i2s_stream_writer, &music_info);
             i2s_stream_set_clk(i2s_stream_writer, music_info.sample_rates, music_info.bits, music_info.channels);

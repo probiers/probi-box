@@ -5,4 +5,7 @@
   "idf.openOcdConfigs": [
     "board/esp32-wrover-kit-3.3v.cfg"
   ],
+  "files.associations": {
+    "audio_element.h": "c"
+  },
 }
