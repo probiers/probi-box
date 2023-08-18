@@ -124,7 +124,7 @@ void app_main(void)
 
 #ifdef CONFIG_AUDIO_SUPPORT_MP3_DECODER
     ESP_LOGI(TAG, "[3.6] Set up uri: /sdcard/test.mp3 ");
-    audio_element_set_uri(fatfs_stream_reader, "/sdcard/test.mp3");
+    audio_element_set_uri(fatfs_stream_reader, "/sdcard/muecke_mit_beute.mp3");
 #elif CONFIG_AUDIO_SUPPORT_AMRNB_DECODER
     ESP_LOGI(TAG, "[3.6] Set up uri: /test.amr");
     audio_element_set_uri(fatfs_stream_reader, "/sdcard/test.amr");
