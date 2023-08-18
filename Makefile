@@ -1,2 +1,2 @@
-PROJECT_NAME := play_sdcard_music
+PROJECT_NAME := flexible_pipeline
 include $(ADF_PATH)/project.mk
