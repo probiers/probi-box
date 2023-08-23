@@ -21,8 +21,8 @@
 #include "i2s_stream.h"
 #ifdef CONFIG_AUDIO_SUPPORT_MP3_DECODER
 #include "mp3_decoder.h"
-#elif (CONFIG_AUDIO_SUPPORT_AMRNB_DECODER ||    \
-        CONFIG_AUDIO_SUPPORT_AMRWB_DECODER)
+#elif (CONFIG_AUDIO_SUPPORT_AMRNB_DECODER || \
+       CONFIG_AUDIO_SUPPORT_AMRWB_DECODER)
 #include "amr_decoder.h"
 #elif CONFIG_AUDIO_SUPPORT_OPUS_DECODER
 #include "opus_decoder.h"
@@ -32,20 +32,183 @@
 #include "flac_decoder.h"
 #elif CONFIG_AUDIO_SUPPORT_WAV_DECODER
 #include "wav_decoder.h"
-#elif ((CONFIG_AUDIO_SUPPORT_AAC_DECODER) ||    \
-        (CONFIG_AUDIO_SUPPORT_M4A_DECODER) ||   \
-        (CONFIG_AUDIO_SUPPORT_TS_DECODER) ||    \
-        (CONFIG_AUDIO_SUPPORT_MP4_DECODER))
+#elif ((CONFIG_AUDIO_SUPPORT_AAC_DECODER) || \
+       (CONFIG_AUDIO_SUPPORT_M4A_DECODER) || \
+       (CONFIG_AUDIO_SUPPORT_TS_DECODER) ||  \
+       (CONFIG_AUDIO_SUPPORT_MP4_DECODER))
 #include "aac_decoder.h"
 #endif
 #include "esp_peripherals.h"
 #include "periph_sdcard.h"
 #include "board.h"
 
+#include "rc522.h"
+
 static const char *TAG = "PLAY_SDCARD_MUSIC";
+static rc522_handle_t scanner;
+
+static void rc522_handler(void *arg, esp_event_base_t base, int32_t event_id, void *event_data)
+{
+    rc522_event_data_t *data = (rc522_event_data_t *)event_data;
+
+    switch (event_id)
+    {
+    case RC522_EVENT_TAG_SCANNED:
+    {
+        rc522_tag_t *tag = (rc522_tag_t *)data->ptr;
+        ESP_LOGI(TAG, "Tag scanned (sn: %" PRIu64 ")", tag->serial_number);
+    }
+    break;
+    }
+}
+#include "driver/uart.h"
+#include "esp_system.h"
+
+typedef struct {
+    char serial[129];
+    size_t pos;
+    int state;
+    uint64_t last_seen_serial;
+    uint64_t time_serial_last_seen;
+    QueueHandle_t uart_queue;
+} rdm6300_handle_t;
+
+rdm6300_handle_t rdm6300_init(int pin)
+{
+    const uart_port_t uart_num = UART_NUM_2;
+    uart_config_t uart_config = {
+        .baud_rate = 9600,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .rx_flow_ctrl_thresh = 122,
+    };
+    // Configure UART parameters
+    ESP_ERROR_CHECK(uart_param_config(uart_num, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_2, UART_PIN_NO_CHANGE, pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    // Setup UART buffered IO with event queue
+    const int uart_buffer_size = (1024 * 2);
+    //QueueHandle_t uart_queue;
+    rdm6300_handle_t handle = {.state = 0, .pos = 0, .last_seen_serial = 0, .time_serial_last_seen = 0};
+    // Install UART driver using an event queue here
+    ESP_ERROR_CHECK(
+        uart_driver_install(
+        UART_NUM_2,
+        uart_buffer_size,
+        uart_buffer_size,
+        10,
+        &(handle.uart_queue),
+        0
+        )
+        );
+    return handle;
+}
+
+enum rdm6300_sense_result
+{
+    RDM6300_SENSE_NEW_TAG,
+    RDM6300_SENSE_TAG_LOST,
+    RDM6300_SENSE_NO_CHANGE,
+};
+
+enum rdm6300_sense_result rdm630_sense(rdm6300_handle_t * handle, uint64_t * serial)
+{
+        enum rdm6300_sense_result result = RDM6300_SENSE_NO_CHANGE;
+        const uart_port_t uart_num = UART_NUM_2;
+        uint8_t data[128];
+        int length = 128;
+        length = uart_read_bytes(uart_num, data, length, 100);
+        for(int i = 0; i < length; i++)
+        {
+            uint8_t byte = data[i];
+            switch(handle->state)
+            {
+                case 0: // wait for start
+                    if(byte == 0x02)
+                    {
+                        handle->state = 1;
+                    }
+                    break;
+                case 1: // reading data
+                    // FIXME: only works when we receive one message per call...
+                    if(byte == 0x03) // end received
+                    {
+                        handle->serial[handle->pos] = '\0';
+                        uint64_t intserial = strtoull(handle->serial, NULL, 16);
+                        if(handle->last_seen_serial != intserial)
+                        {
+                            result = RDM6300_SENSE_NEW_TAG;
+                            *serial = intserial;
+                            handle->last_seen_serial = intserial;
+                        }
+                        handle->time_serial_last_seen = esp_timer_get_time();
+
+                        //ESP_LOGI(TAG, "serial: %s", handle->serial);
+                        handle->state = 0;
+                        handle->pos = 0;
+                        break;
+                    }
+                    if(handle->pos + 1 > 128)
+                    {
+                        handle->state = 0;
+                        handle->pos = 0;
+                        break;
+                    }
+                    handle->serial[handle->pos++] = byte;
+                    break;
+            }
+        }
+        if((handle->last_seen_serial != 0) && (esp_timer_get_time() - handle->time_serial_last_seen > 10)) // FIXME: is this really sending so fast?
+        {
+            *serial = handle->last_seen_serial;
+            result = RDM6300_SENSE_TAG_LOST;
+            handle->last_seen_serial = 0;
+        }
+        return result;
+}
 
 void app_main(void)
 {
+    ESP_LOGI(TAG, "HELLO");
+
+
+    rdm6300_handle_t rdm6300_handle = rdm6300_init(13);
+    ESP_LOGI(TAG, "LOOP");
+    while(1)
+    {
+        uint64_t serial;
+        enum rdm6300_sense_result sense_result = rdm630_sense(&rdm6300_handle, &serial);
+        if(sense_result == RDM6300_SENSE_NEW_TAG)
+        {
+            ESP_LOGI(TAG, "NEW TAG: %" PRIu64, serial);
+        }
+        else if(sense_result == RDM6300_SENSE_TAG_LOST)
+        {
+            ESP_LOGI(TAG, "TAG LOST: %" PRIu64, serial);
+        }
+    }
+    ESP_LOGI(TAG, "END");
+
+    // rc522_config_t config = {
+    //     .transport = RC522_TRANSPORT_I2C,
+    //     .i2c.sda_gpio = 22,
+    //     .i2c.scl_gpio = 13,
+    //     .i2c.clock_speed_hz = 10000,
+    // };
+
+    // esp_err_t err = rc522_create(&config, &scanner);
+    // if (err != ESP_OK)
+    //{
+    //     ESP_LOGE(TAG, "Could not create scanner: %d", err);
+    //     return;
+    // }
+    // ESP_LOGI(TAG, "INIT OK");
+    // rc522_register_events(scanner, RC522_EVENT_ANY, rc522_handler, NULL);
+    // ESP_LOGI(TAG, "START");
+    // rc522_start(scanner);
+    // ESP_LOGI(TAG, "END");
+
     // Example of linking elements into an audio pipeline -- START
     audio_pipeline_handle_t pipeline;
     audio_element_handle_t fatfs_stream_reader, i2s_stream_writer, music_decoder;
@@ -84,10 +247,10 @@ void app_main(void)
     ESP_LOGI(TAG, "[3.3] Create mp3 decoder");
     mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
     music_decoder = mp3_decoder_init(&mp3_cfg);
-#elif (CONFIG_AUDIO_SUPPORT_AMRNB_DECODER ||    \
-        CONFIG_AUDIO_SUPPORT_AMRWB_DECODER)
+#elif (CONFIG_AUDIO_SUPPORT_AMRNB_DECODER || \
+       CONFIG_AUDIO_SUPPORT_AMRWB_DECODER)
     ESP_LOGI(TAG, "[3.3] Create amr decoder");
-    amr_decoder_cfg_t  amr_dec_cfg  = DEFAULT_AMR_DECODER_CONFIG();
+    amr_decoder_cfg_t amr_dec_cfg = DEFAULT_AMR_DECODER_CONFIG();
     music_decoder = amr_decoder_init(&amr_dec_cfg);
 #elif CONFIG_AUDIO_SUPPORT_OPUS_DECODER
     ESP_LOGI(TAG, "[3.3] Create opus decoder");
@@ -95,7 +258,7 @@ void app_main(void)
     music_decoder = decoder_opus_init(&opus_dec_cfg);
 #elif CONFIG_AUDIO_SUPPORT_OGG_DECODER
     ESP_LOGI(TAG, "[3.3] Create ogg decoder");
-    ogg_decoder_cfg_t  ogg_dec_cfg  = DEFAULT_OGG_DECODER_CONFIG();
+    ogg_decoder_cfg_t ogg_dec_cfg = DEFAULT_OGG_DECODER_CONFIG();
     music_decoder = ogg_decoder_init(&ogg_dec_cfg);
 #elif CONFIG_AUDIO_SUPPORT_FLAC_DECODER
     ESP_LOGI(TAG, "[3.3] Create flac decoder");
@@ -103,14 +266,14 @@ void app_main(void)
     music_decoder = flac_decoder_init(&flac_dec_cfg);
 #elif CONFIG_AUDIO_SUPPORT_WAV_DECODER
     ESP_LOGI(TAG, "[3.3] Create wav decoder");
-    wav_decoder_cfg_t  wav_dec_cfg  = DEFAULT_WAV_DECODER_CONFIG();
+    wav_decoder_cfg_t wav_dec_cfg = DEFAULT_WAV_DECODER_CONFIG();
     music_decoder = wav_decoder_init(&wav_dec_cfg);
-#elif ((CONFIG_AUDIO_SUPPORT_AAC_DECODER) ||    \
-        (CONFIG_AUDIO_SUPPORT_M4A_DECODER) ||   \
-        (CONFIG_AUDIO_SUPPORT_TS_DECODER) ||    \
-        (CONFIG_AUDIO_SUPPORT_MP4_DECODER))
+#elif ((CONFIG_AUDIO_SUPPORT_AAC_DECODER) || \
+       (CONFIG_AUDIO_SUPPORT_M4A_DECODER) || \
+       (CONFIG_AUDIO_SUPPORT_TS_DECODER) ||  \
+       (CONFIG_AUDIO_SUPPORT_MP4_DECODER))
     ESP_LOGI(TAG, "[3.3] Create aac decoder");
-    aac_decoder_cfg_t  aac_dec_cfg  = DEFAULT_AAC_DECODER_CONFIG();
+    aac_decoder_cfg_t aac_dec_cfg = DEFAULT_AAC_DECODER_CONFIG();
     music_decoder = aac_decoder_init(&aac_dec_cfg);
 #endif
 
@@ -173,22 +336,35 @@ void app_main(void)
     // Example of linking elements into an audio pipeline -- END
 
     ESP_LOGI(TAG, "[ 6 ] Listen for all pipeline events");
-    while (1) {
+    while (1)
+    {
+        const uart_port_t uart_num = UART_NUM_2;
+        uint8_t data[128];
+        int length = 0;
+        ESP_ERROR_CHECK(uart_get_buffered_data_len(uart_num, (size_t *)&length));
+        if(length > 0)
+        {
+            length = uart_read_bytes(uart_num, data, length, 100);
+
+            ESP_LOGI(TAG, "rx");
+
+        }
         audio_event_iface_msg_t msg;
         esp_err_t ret = audio_event_iface_listen(evt, &msg, portMAX_DELAY);
-        if (ret != ESP_OK) {
+        if (ret != ESP_OK)
+        {
             ESP_LOGE(TAG, "[ * ] Event interface error : %d", ret);
             continue;
         }
 
-        if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *) music_decoder
-            && msg.cmd == AEL_MSG_CMD_REPORT_MUSIC_INFO) {
+        if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *)music_decoder && msg.cmd == AEL_MSG_CMD_REPORT_MUSIC_INFO)
+        {
             audio_element_info_t music_info = {0};
             audio_element_getinfo(music_decoder, &music_info);
 
             ESP_LOGI(TAG, "[ * ] Receive music info from mp3 decoder, sample_rates=%d, bits=%d, ch=%d",
                      music_info.sample_rates, music_info.bits, music_info.channels);
-            
+
             int volume = 100;
             audio_hal_set_volume(board_handle->audio_hal, volume);
             ESP_LOGI(TAG, "[ * ] Receive music volume=%d",
@@ -199,13 +375,12 @@ void app_main(void)
             continue;
         }
 
-        /* Stop when the last pipeline element (i2s_stream_writer in this case) receives stop event */
-        if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *) i2s_stream_writer
-            && msg.cmd == AEL_MSG_CMD_REPORT_STATUS
-            && (((int)msg.data == AEL_STATUS_STATE_STOPPED) || ((int)msg.data == AEL_STATUS_STATE_FINISHED))) {
-            ESP_LOGW(TAG, "[ * ] Stop event received");
-            break;
-        }
+        // /* Stop when the last pipeline element (i2s_stream_writer in this case) receives stop event */
+        // if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *)i2s_stream_writer && msg.cmd == AEL_MSG_CMD_REPORT_STATUS && (((int)msg.data == AEL_STATUS_STATE_STOPPED) || ((int)msg.data == AEL_STATUS_STATE_FINISHED)))
+        // {
+        //     ESP_LOGW(TAG, "[ * ] Stop event received");
+        //     break;
+        // }
     }
 
     ESP_LOGI(TAG, "[ 7 ] Stop audio_pipeline");
