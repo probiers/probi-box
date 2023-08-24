@@ -73,6 +73,9 @@ typedef struct {
     QueueHandle_t uart_queue;
 } rdm6300_handle_t;
 
+/// initialize rdm6300 driver using uart2
+/// Only a single pin is needed connected to the TX pin of the rdm6300
+/// lots of things hard-coded and unnecessarily huge buffers
 rdm6300_handle_t rdm6300_init(int pin)
 {
     const uart_port_t uart_num = UART_NUM_2;
@@ -112,6 +115,10 @@ enum rdm6300_sense_result
     RDM6300_SENSE_NO_CHANGE,
 };
 
+/// receives data from the rdm6300 and returns the serial number of the tag if present
+/// returns RDM6300_SENSE_NEW_TAG if a new tag was detected
+/// returns RDM6300_SENSE_TAG_LOST if a tag was lost
+/// returns RDM6300_SENSE_NO_CHANGE if no change was sensed since last call. NOTE: this could either mean tag is still present or no tag is present, depending on last returned sense result.
 enum rdm6300_sense_result rdm630_sense(rdm6300_handle_t * handle, uint64_t * serial)
 {
     enum rdm6300_sense_result result = RDM6300_SENSE_NO_CHANGE;
@@ -163,7 +170,7 @@ enum rdm6300_sense_result rdm630_sense(rdm6300_handle_t * handle, uint64_t * ser
                 break;
         }
     }
-    if((handle->last_seen_serial != 0) && (esp_timer_get_time() - handle->time_serial_last_seen > 200000)) // FIXME: is this really sending so fast?
+    if((handle->last_seen_serial != 0) && (esp_timer_get_time() - handle->time_serial_last_seen > 200000))
     {
         *serial = handle->last_seen_serial;
         result = RDM6300_SENSE_TAG_LOST;
@@ -193,25 +200,6 @@ void app_main(void)
         }
     }
     ESP_LOGI(TAG, "END");
-
-    // rc522_config_t config = {
-    //     .transport = RC522_TRANSPORT_I2C,
-    //     .i2c.sda_gpio = 22,
-    //     .i2c.scl_gpio = 13,
-    //     .i2c.clock_speed_hz = 10000,
-    // };
-
-    // esp_err_t err = rc522_create(&config, &scanner);
-    // if (err != ESP_OK)
-    //{
-    //     ESP_LOGE(TAG, "Could not create scanner: %d", err);
-    //     return;
-    // }
-    // ESP_LOGI(TAG, "INIT OK");
-    // rc522_register_events(scanner, RC522_EVENT_ANY, rc522_handler, NULL);
-    // ESP_LOGI(TAG, "START");
-    // rc522_start(scanner);
-    // ESP_LOGI(TAG, "END");
 
     // Example of linking elements into an audio pipeline -- START
     audio_pipeline_handle_t pipeline;
