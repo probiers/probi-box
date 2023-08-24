@@ -114,58 +114,62 @@ enum rdm6300_sense_result
 
 enum rdm6300_sense_result rdm630_sense(rdm6300_handle_t * handle, uint64_t * serial)
 {
-        enum rdm6300_sense_result result = RDM6300_SENSE_NO_CHANGE;
-        const uart_port_t uart_num = UART_NUM_2;
-        uint8_t data[128];
-        int length = 128;
-        length = uart_read_bytes(uart_num, data, length, 100);
-        for(int i = 0; i < length; i++)
+    enum rdm6300_sense_result result = RDM6300_SENSE_NO_CHANGE;
+    const uart_port_t uart_num = UART_NUM_2;
+    uint8_t data[128];
+    int length = 128;
+    //ESP_LOGI(TAG, " start rx: %" PRIu64, esp_timer_get_time());
+    //length = uart_read_bytes(uart_num, data, length, 100);
+    length = uart_read_bytes(uart_num, data, length, 1);
+    //ESP_LOGI(TAG, " end rx: %" PRIu64, esp_timer_get_time());
+    for(int i = 0; i < length; i++)
+    {
+        uint8_t byte = data[i];
+        switch(handle->state)
         {
-            uint8_t byte = data[i];
-            switch(handle->state)
-            {
-                case 0: // wait for start
-                    if(byte == 0x02)
+            case 0: // wait for start
+                if(byte == 0x02)
+                {
+                    handle->state = 1;
+                }
+                break;
+            case 1: // reading data
+                // FIXME: only works when we receive one message per call...
+                if(byte == 0x03) // end received
+                {
+                    handle->serial[handle->pos] = '\0';
+                    uint64_t intserial = strtoull(handle->serial, NULL, 16);
+                    if(handle->last_seen_serial != intserial)
                     {
-                        handle->state = 1;
+                        result = RDM6300_SENSE_NEW_TAG;
+                        *serial = intserial;
+                        handle->last_seen_serial = intserial;
                     }
-                    break;
-                case 1: // reading data
-                    // FIXME: only works when we receive one message per call...
-                    if(byte == 0x03) // end received
-                    {
-                        handle->serial[handle->pos] = '\0';
-                        uint64_t intserial = strtoull(handle->serial, NULL, 16);
-                        if(handle->last_seen_serial != intserial)
-                        {
-                            result = RDM6300_SENSE_NEW_TAG;
-                            *serial = intserial;
-                            handle->last_seen_serial = intserial;
-                        }
-                        handle->time_serial_last_seen = esp_timer_get_time();
+                    handle->time_serial_last_seen = esp_timer_get_time();
 
-                        //ESP_LOGI(TAG, "serial: %s", handle->serial);
-                        handle->state = 0;
-                        handle->pos = 0;
-                        break;
-                    }
-                    if(handle->pos + 1 > 128)
-                    {
-                        handle->state = 0;
-                        handle->pos = 0;
-                        break;
-                    }
-                    handle->serial[handle->pos++] = byte;
+                    //ESP_LOGI(TAG, "serial: %s", handle->serial);
+
+                    handle->state = 0;
+                    handle->pos = 0;
                     break;
-            }
+                }
+                if(handle->pos + 1 > 128)
+                {
+                    handle->state = 0;
+                    handle->pos = 0;
+                    break;
+                }
+                handle->serial[handle->pos++] = byte;
+                break;
         }
-        if((handle->last_seen_serial != 0) && (esp_timer_get_time() - handle->time_serial_last_seen > 10)) // FIXME: is this really sending so fast?
-        {
-            *serial = handle->last_seen_serial;
-            result = RDM6300_SENSE_TAG_LOST;
-            handle->last_seen_serial = 0;
-        }
-        return result;
+    }
+    if((handle->last_seen_serial != 0) && (esp_timer_get_time() - handle->time_serial_last_seen > 200000)) // FIXME: is this really sending so fast?
+    {
+        *serial = handle->last_seen_serial;
+        result = RDM6300_SENSE_TAG_LOST;
+        handle->last_seen_serial = 0;
+    }
+    return result;
 }
 
 void app_main(void)
