@@ -42,25 +42,9 @@
 #include "periph_sdcard.h"
 #include "board.h"
 
-#include "rc522.h"
+#include "rc522.h" // FIXME: cannot remove this, otherwise I get LOGI errors
 
 static const char *TAG = "PLAY_SDCARD_MUSIC";
-static rc522_handle_t scanner;
-
-static void rc522_handler(void *arg, esp_event_base_t base, int32_t event_id, void *event_data)
-{
-    rc522_event_data_t *data = (rc522_event_data_t *)event_data;
-
-    switch (event_id)
-    {
-    case RC522_EVENT_TAG_SCANNED:
-    {
-        rc522_tag_t *tag = (rc522_tag_t *)data->ptr;
-        ESP_LOGI(TAG, "Tag scanned (sn: %" PRIu64 ")", tag->serial_number);
-    }
-    break;
-    }
-}
 #include "driver/uart.h"
 #include "esp_system.h"
 
