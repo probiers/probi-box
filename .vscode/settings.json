@@ -9,4 +9,5 @@
     "audio_element.h": "c",
     "periph_sdcard.h": "c"
   },
+  "cmake.configureOnOpen": false,
 }

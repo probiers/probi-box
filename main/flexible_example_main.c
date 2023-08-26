@@ -38,6 +38,7 @@
 #include "periph_touch.h"
 
 #include "audio_idf_version.h"
+#include "rfid_reader.h"
 
 #if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 1, 0))
 #include "esp_netif.h"
@@ -288,6 +289,22 @@ void app_main(void)
     // Setup audio codec
     audio_board_handle_t board_handle = audio_board_init();
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
+
+    rdm6300_handle_t rdm6300_handle = rdm6300_init(13);
+    ESP_LOGI(TAG, "LOOP");
+    while(1)
+    {
+        uint64_t serial;
+        enum rdm6300_sense_result sense_result = rdm630_sense(&rdm6300_handle, &serial);
+        if(sense_result == RDM6300_SENSE_NEW_TAG)
+        {
+            ESP_LOGI(TAG, "NEW TAG: %" PRIu64, serial);
+        }
+        else if(sense_result == RDM6300_SENSE_TAG_LOST)
+        {
+            ESP_LOGI(TAG, "TAG LOST: %" PRIu64, serial);
+        }
+    }
 
     flexible_pipeline_playback();
     esp_periph_set_destroy(set);
