@@ -7,6 +7,7 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
+extern "C" {
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -27,13 +28,16 @@
 
 #include "audio_idf_version.h"
 #include "rfid_reader.h"
-#include "flexible_pipeline.h"
 
 #if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 1, 0))
 #include "esp_netif.h"
 #else
 #include "tcpip_adapter.h"
 #endif
+
+extern void app_main(void);
+}
+#include "flexible_pipeline.hpp"
 
 static const char *TAG = "main";
 static esp_periph_set_handle_t set;
@@ -71,6 +75,7 @@ void app_main(void)
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
 
     rdm6300_handle_t rdm6300_handle = rdm6300_init(13);
+    FlexiblePipeline flexible_pipeline{};
     ESP_LOGI(TAG, "LOOP");
     while(1)
     {
@@ -79,13 +84,15 @@ void app_main(void)
         if(sense_result == RDM6300_SENSE_NEW_TAG)
         {
             ESP_LOGI(TAG, "NEW TAG: %" PRIu64, serial);
+            flexible_pipeline.start("/sdcard/1.mp3");
         }
         else if(sense_result == RDM6300_SENSE_TAG_LOST)
         {
             ESP_LOGI(TAG, "TAG LOST: %" PRIu64, serial);
+            flexible_pipeline.stop();
         }
     }
 
-    flexible_pipeline_playback(set);
+    esp_periph_set_stop_all(set);
     esp_periph_set_destroy(set);
 }
