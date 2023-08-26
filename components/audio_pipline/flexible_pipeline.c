@@ -14,7 +14,6 @@
 
 #include "esp_log.h"
 #include "sdkconfig.h"
-#include "nvs_flash.h"
 #include "esp_wifi.h"
 #include "audio_element.h"
 #include "audio_pipeline.h"
