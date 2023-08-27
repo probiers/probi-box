@@ -109,9 +109,10 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
 
     /* Send file-list table definition and column labels */
     httpd_resp_sendstr_chunk(req,
-        "<table class=\"fixed\" border=\"1\">"
+        "<table class=\"fixed\" border=\"0\">"
         "<col width=\"800px\" /><col width=\"300px\" /><col width=\"300px\" /><col width=\"100px\" />"
-        "<thead><tr><th>Name</th><th>Type</th><th>Size (Bytes)</th><th>Delete</th></tr></thead>"
+        "<thead><tr><th style=\"text-align: left\">Name</th><th style=\"text-align: left\">Type</th>"
+        "<th style=\"text-align: left\">Size (Bytes)</th><th style=\"text-align: left\">Action</th></tr></thead>"
         "<tbody>");
 
     /* Iterate over all files / folders and fetch their names and sizes */

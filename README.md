@@ -1,31 +1,17 @@
-﻿# Flexible Pipeline
+﻿# Probi Box 
 
 - [中文版本](./README_CN.md)
-- Regular Example: ![alt text](../../../docs/_static/level_regular.png "Regular Example")
 
 
-## Example Brief
+## Introduction
 
-This example shows how to use the ADF pipeline to play different audio dynamically, involving pipeline operations such as link, breakup, and relink.
-
-1. When playing or switching to play audio in AAC format, first pause the previous MP3 playback pipeline, break it up, and relink it to form a new AAC playback pipeline. The combined AAC audio pipeline is as follows:
-
-   ```
-   [sdcard] ---> file_aac_reader ---> aac_decoder ---> i2s_stream_writer ---> [codec_chip]
-   ```
-
-2. When playing or switching to play audio in MP3 format, first pause the previous AAC playback pipeline, break it up, and relink it to form a new MP3 playback pipeline. The combined MP3 audio pipeline is as follows:
-
-   ```
-   [sdcard] ---> file_mp3_reader ---> mp3_decoder ---> i2s_stream_writer ---> [codec_chip]
-   ```
+This project use [esp-adf](https://github.com/espressif/esp-adf) to build a music box in few days.
 
 ## Environment Setup
 
 #### Hardware Required
 
-
-This example runs on the boards that are marked with a green checkbox in the [table](../../README.md#compatibility-of-examples-with-espressif-audio-boards). Please remember to select the board in menuconfig as discussed in Section [Configuration](#configuration) below.
+This project is tested using [ESP32-LyraT-Mini](https://docs.espressif.com/projects/esp-adf/en/latest/get-started/get-started-esp32-lyrat-mini.html)
 
 
 ## Build and Flash
