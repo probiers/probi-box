@@ -218,6 +218,7 @@ void FlexiblePipeline::loop(){
             ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
             audio_element_set_uri(handle_elements["file_reader"], (char *)msg.data);
             ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
+            audio_pipeline_set_listener(pipeline_play, evt);
             audio_pipeline_run(pipeline_play);
             audio_pipeline_resume(pipeline_play);
         } else if(msg.cmd == MY_APP_STOP_EVENT_ID){
