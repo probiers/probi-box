@@ -137,6 +137,12 @@ audio_element_handle_t FlexiblePipeline::create_wav_decoder()
     return wav_decoder_init(&wav_cfg);
 }
 
+static audio_element_handle_t create_aac_decoder()
+{
+    aac_decoder_cfg_t aac_cfg = DEFAULT_AAC_DECODER_CONFIG();
+    return aac_decoder_init(&aac_cfg);
+}
+
 static audio_element_handle_t create_http_stream(const char *url)
 {
     http_stream_cfg_t http_cfg = HTTP_STREAM_CFG_DEFAULT();
@@ -155,15 +161,47 @@ static audio_element_handle_t create_raw_stream()
     return raw_stream;
 }
 
-void FlexiblePipeline::add_element(const char* name, audio_element_handle_t handle){
+void FlexiblePipeline::add_element(const char* name, audio_element_handle_t handle, bool link = true){
+    if(link){
+        link_tags.push_back(name);
+    }
     handle_elements[name] = handle;
-    link_tags.push_back(name);
+}
+
+enum class DecoderType{
+    MP3,
+    ACC,
+    WAV
+};
+
+void FlexiblePipeline::link_pipeline(DecoderType type){
+    auto old_decoder = link_tags[1];
+    switch(type){
+        case DecoderType::MP3:
+            link_tags[1] = "mp3_decoder";
+            break;
+        case DecoderType::ACC:
+            link_tags[1] = "acc_decoder";
+            break;
+        case DecoderType::WAV:
+            link_tags[1] = "wav_decoder";
+            break;
+    }
+    if(old_decoder != link_tags[1]){
+        audio_pipeline_breakup_elements(pipeline_play, old_decoder);
+        audio_pipeline_relink(pipeline_play, link_tags.data(), link_tags.size());
+    }
+    else{
+        audio_pipeline_link(pipeline_play, link_tags.data(), link_tags.size());
+    }
 }
 
 FlexiblePipeline::FlexiblePipeline(){
     pipeline_play = audio_pipeline_init(&pipeline_cfg);
     add_element("file_reader", create_fatfs_stream(SAVE_FILE_RATE, SAVE_FILE_BITS, SAVE_FILE_CHANNEL, AUDIO_STREAM_READER));
-    add_element("decoder", create_mp3_decoder());
+    add_element("mp3_decoder", create_mp3_decoder());
+    add_element("acc_decoder", create_acc_decoder(), false);
+    add_element("wav_decoder", create_wav_decoder(), false);
     add_element("filter", create_filter_upsample(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL));
     add_element("i2s_writer", create_i2s_stream_writer(PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL, AUDIO_STREAM_WRITER));
 
@@ -182,7 +220,7 @@ FlexiblePipeline::FlexiblePipeline(){
 
     ESP_LOGI(TAG, "Start playback pipeline");
     //const char* link_tags[] = {"file_reader", "decoder", "filter", "i2s_writer"};
-    audio_pipeline_link(pipeline_play, link_tags.data(), link_tags.size());
+    link_pipeline(DecoderType::MP3);
     //audio_pipeline_link(pipeline_play, link_tags, 4);
 
 }
@@ -208,6 +246,12 @@ void FlexiblePipeline::start_pipeline(){
     audio_pipeline_run(pipeline_play);
 }
 
+void FlexiblePipeline::resume_pipeline(){
+    ESP_LOGW(TAG, "[ * ] Resume pipeline");
+    audio_pipeline_set_listener(pipeline_play, evt);
+    audio_pipeline_resume(pipeline_play);
+}
+
 void FlexiblePipeline::stop_pipeline(){
     ESP_LOGW(TAG, "[ * ] Stop pipeline");
     audio_pipeline_stop(pipeline_play);
@@ -216,6 +260,48 @@ void FlexiblePipeline::stop_pipeline(){
     audio_pipeline_reset_ringbuffer(pipeline_play);
     audio_pipeline_reset_elements(pipeline_play);
 }
+
+DecoderType FlexiblePipeline::getFileType(const char* filename){
+    std::string file(filename);
+    std::string ext = file.substr(file.find_last_of(".") + 1);
+    if (ext == "mp3"){
+        return DecoderType::MP3;
+    }
+    else if (ext == "aac"){
+        return DecoderType::ACC;
+    }
+    else if (ext == "wav"){
+        return DecoderType::WAV;
+    }
+    else{
+        ESP_LOGE(TAG, "Unknown file type %s", ext.c_str());
+        return DecoderType::MP3;
+    }
+}
+
+void FlexiblePipeline::play_file(const char* filename, bool start_pipeline = false){
+    ESP_LOGI(TAG, "Play file %s", filename);
+
+    auto codec_type = getFileType(filename);
+
+    const char * old_decoder = link_tags[1];
+
+    if(not start_pipeline){
+        audio_pipeline_pause(pipeline_play);
+    }
+
+    audio_element_set_uri(handle_elements["file_reader"], filename);
+
+    link_pipeline(codec_type);
+
+    if(start_pipeline){
+        start_pipeline();
+    }
+    else{
+        resume_pipeline();
+    }
+}
+
 void FlexiblePipeline::loop(){
 
     bool is_running = false;
@@ -232,9 +318,8 @@ void FlexiblePipeline::loop(){
 
         if (msg.cmd == MY_APP_START_EVENT_ID) {
             ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
-            audio_element_set_uri(handle_elements["file_reader"], (char *)msg.data);
             if (!is_running) {
-                start_pipeline();
+                play_file((char *)msg.data, true);
                 is_running = true;
             } else {
                 ESP_LOGI(TAG, "Resume music");
@@ -248,19 +333,12 @@ void FlexiblePipeline::loop(){
             stop_pipeline();
             const char * music = playlist_next().c_str();
             ESP_LOGI(TAG, "Changing music to %s", music);
-            audio_element_set_uri(handle_elements["file_reader"], music);
-            start_pipeline();
+            play_file(music);
         }
         if (msg.need_free_data) {
             free(msg.data);
         }
     }
-}
-
-void FlexiblePipeline::reset(){
-   for (auto& it : handle_elements){
-       audio_element_reset_state(it.second);
-   }
 }
 
 std::string& FlexiblePipeline::playlist_next(){
