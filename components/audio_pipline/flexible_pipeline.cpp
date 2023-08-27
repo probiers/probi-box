@@ -151,91 +151,6 @@ static audio_element_handle_t create_raw_stream()
     return raw_stream;
 }
 
-void flexible_pipeline_playback(esp_periph_set_handle_t set)
-{
-
-    ESP_LOGI(TAG, "[3.2] Create pipeline to save audio file");
-    audio_pipeline_cfg_t pipeline_save_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
-    audio_pipeline_handle_t pipeline_save = audio_pipeline_init(&pipeline_save_cfg);
-
-    ESP_LOGI(TAG, "[ 1 ] Create all audio elements for playback pipeline");
-    audio_element_handle_t http_stream_el = create_http_stream("http://dl.espressif.com/dl/audio/ff-16b-2c-44100hz.mp3");
-    audio_element_handle_t raw_read_el = create_raw_stream();
-
-    ESP_LOGI(TAG, "[ 2 ] Register all audio elements to playback pipeline");
-    audio_pipeline_register(pipeline_save, http_stream_el,       "http_stream");
-
-
-    ESP_LOGI(TAG, "[ 3 ] Set up  event listener");
-    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
-    audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
-    audio_pipeline_set_listener(pipeline_save, evt);
-
-
-
-    ESP_LOGI(TAG, "[3.4] Register all elements to pipeline_save");
-    audio_pipeline_register(pipeline_save, raw_read_el, "raw");
-    //audio_pipeline_register(pipeline_save, fatfs_wr_stream_el, "file");
-
-    ESP_LOGI(TAG, "[3.5] Link elements together raw_stream-->fatfs_stream");
-    const char *link_save[2] = {"raw", "file"};
-    audio_pipeline_link(pipeline_save, &link_save[0], 2);
-
-    ESP_LOGI(TAG, "[3.6] Connect input ringbuffer of pipeline_save to http stream multi output");
-    ringbuf_handle_t rb = audio_element_get_output_ringbuf(raw_read_el);
-    audio_element_set_multi_output_ringbuf(http_stream_el, rb, 0);
- 
-    ESP_LOGI(TAG, "[4.0] Start and wait for Wi-Fi network");
-    periph_wifi_cfg_t wifi_cfg = {
-        .ssid = CONFIG_WIFI_SSID,
-        .password = CONFIG_WIFI_PASSWORD,
-    };
-    esp_periph_handle_t wifi_handle = periph_wifi_init(&wifi_cfg);
-    esp_periph_start(set, wifi_handle);
-    periph_wifi_wait_for_connected(wifi_handle, portMAX_DELAY);
-
-    audio_pipeline_run(pipeline_save);
-    while (1) {
-        audio_event_iface_msg_t msg;
-        esp_err_t ret = audio_event_iface_listen(evt, &msg, portMAX_DELAY);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "[ * ] Event interface error : %d", ret);
-            continue;
-        }
-
-       // if (((int)msg.data == get_input_mode_id()) && (msg.cmd == PERIPH_BUTTON_PRESSED || msg.cmd == PERIPH_ADC_BUTTON_PRESSED
-       //         || msg.cmd == PERIPH_TOUCH_TAP)) {
-       //     audio_pipeline_pause(pipeline_play);
-       //     ESP_LOGE(TAG, "Changing music to %s", source_is_mp3_format ? "mp3 format" : "wav format");
-       //     if (source_is_mp3_format) {
-       //         audio_pipeline_breakup_elements(pipeline_play, wav_decoder_el);
-       //         audio_pipeline_relink(pipeline_play, (const char *[]) {"file_mp3_reader", "mp3_decoder", "filter_upsample", "i2s_writer"}, 4);
-       //         audio_pipeline_set_listener(pipeline_play, evt);
-       //     } else {
-       //         audio_pipeline_breakup_elements(pipeline_play, mp3_decoder_el);
-       //         audio_pipeline_relink(pipeline_play, (const char *[]) {"file_wav_reader", "wav_decoder", "filter_upsample", "i2s_writer"}, 4);
-       //         audio_pipeline_set_listener(pipeline_play, evt);
-       //     }
-       //     audio_pipeline_run(pipeline_play);
-       //     audio_pipeline_resume(pipeline_play);
-       //     ESP_LOGE(TAG, "[ 4.1 ] Start playback new pipeline");
-       // }
-    }
-
-    ESP_LOGI(TAG, "[ 5 ] Stop playback pipeline");
-    audio_pipeline_unregister_more(pipeline_save, raw_read_el, NULL);
-
-    audio_event_iface_remove_listener(esp_periph_set_get_event_iface(set), evt);
-    audio_event_iface_destroy(evt);
-
-    audio_element_deinit(http_stream_el);
-    audio_element_deinit(raw_read_el);
-
-    audio_pipeline_deinit(pipeline_save);
-
-}
-
-
 FlexiblePipeline::FlexiblePipeline(){
     pipeline_play = audio_pipeline_init(&pipeline_cfg);
     fatfs_reader_el = create_fatfs_stream(SAVE_FILE_RATE, SAVE_FILE_BITS, SAVE_FILE_CHANNEL, AUDIO_STREAM_READER);
@@ -247,6 +162,8 @@ FlexiblePipeline::FlexiblePipeline(){
     audio_pipeline_register(pipeline_play, decoder_el,       "decoder");
     audio_pipeline_register(pipeline_play, filter_upsample_el,   "filter_upsample");
     audio_pipeline_register(pipeline_play, i2s_stream_writer_el,        "i2s_writer");
+    //audio_element_set_uri(fatfs_reader_el, "/sdcard/muecke_mit_beute.wav");
+    audio_element_set_uri(fatfs_reader_el, "/sdcard/twinkle_twinkle.wav");
 
     ESP_LOGI(TAG, "Set up  i2s clock");
     i2s_stream_set_clk(i2s_stream_writer_el, PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL);
@@ -283,7 +200,6 @@ FlexiblePipeline::~FlexiblePipeline(){
 }
 void FlexiblePipeline::loop(){
 
-    audio_element_set_uri(fatfs_reader_el, "/sdcard/muecke_mit_beute.wav");
     ESP_LOGI(TAG, "Plan music!");
     audio_pipeline_run(pipeline_play);
     audio_event_iface_msg_t msg;

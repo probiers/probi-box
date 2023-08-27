@@ -93,24 +93,25 @@ extern "C" void app_main(void)
     audio_board_handle_t board_handle = audio_board_init();
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
 
-    rdm6300_handle_t rdm6300_handle = rdm6300_init(13);
+    //rdm6300_handle_t rdm6300_handle = rdm6300_init(13);
     FlexiblePipeline flexible_pipeline{};
     std::thread any_core([&](){flexible_pipeline.loop();});
     ESP_LOGI(TAG, "LOOP");
     while(1)
     {
-        uint64_t serial;
-        enum rdm6300_sense_result sense_result = rdm630_sense(&rdm6300_handle, &serial);
-        if(sense_result == RDM6300_SENSE_NEW_TAG)
-        {
-            ESP_LOGI(TAG, "NEW TAG: %" PRIu64, serial);
-            flexible_pipeline.start(std::to_string(serial) + ".mp3");
-        }
-        else if(sense_result == RDM6300_SENSE_TAG_LOST)
-        {
-            ESP_LOGI(TAG, "TAG LOST: %" PRIu64, serial);
-            flexible_pipeline.stop();
-        }
+        //uint64_t serial;
+        //enum rdm6300_sense_result sense_result = rdm630_sense(&rdm6300_handle, &serial);
+        //if(sense_result == RDM6300_SENSE_NEW_TAG)
+        //{
+        //    ESP_LOGI(TAG, "NEW TAG: %" PRIu64, serial);
+        //    flexible_pipeline.start(std::to_string(serial) + ".mp3");
+        //}
+        //else if(sense_result == RDM6300_SENSE_TAG_LOST)
+        //{
+        //    ESP_LOGI(TAG, "TAG LOST: %" PRIu64, serial);
+        //    flexible_pipeline.stop();
+        //}
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     esp_periph_set_stop_all(set);
