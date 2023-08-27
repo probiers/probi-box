@@ -9,6 +9,7 @@ extern "C" {
 
 #include <string>
 #include <vector>
+#include <map>
 
 class FlexiblePipeline
 {
@@ -30,15 +31,15 @@ class FlexiblePipeline
 
   private:
 
+    void add_element(const char* name, audio_element_handle_t handle);
+    void reset();
     void playlist_read(std::string& playlist_name);
     std::string& playlist_next();
 
     audio_pipeline_handle_t pipeline_play = NULL;
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
-    audio_element_handle_t fatfs_reader_el = NULL;
-    audio_element_handle_t decoder_el = NULL;
-    audio_element_handle_t filter_upsample_el = NULL; 
-    audio_element_handle_t i2s_stream_writer_el = NULL;
+    std::map<const std::string, audio_element_handle_t> handle_elements;
+    std::vector<const char*> link_tags;
     audio_event_iface_handle_t evt = NULL;
     audio_event_iface_handle_t evt_cmd = NULL;
     std::vector <std::string> playlist;

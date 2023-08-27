@@ -60,8 +60,8 @@ static const char *TAG = "FLEXIBLE_PIPELINE";
 #define PLAYBACK_BITS       16
 
 // Define your own event ID for starting and stopping the pipeline
-#define MY_APP_START_EVENT_ID 1
-#define MY_APP_STOP_EVENT_ID 2
+#define MY_APP_START_EVENT_ID 100
+#define MY_APP_STOP_EVENT_ID 101
 
 #define RESAMPLE_FILTER_CONFIG() {          \
         .src_rate = 44100,                          \
@@ -155,22 +155,24 @@ static audio_element_handle_t create_raw_stream()
     return raw_stream;
 }
 
+void FlexiblePipeline::add_element(const char* name, audio_element_handle_t handle){
+    handle_elements[name] = handle;
+    link_tags.push_back(name);
+}
+
 FlexiblePipeline::FlexiblePipeline(){
     pipeline_play = audio_pipeline_init(&pipeline_cfg);
-    fatfs_reader_el = create_fatfs_stream(SAVE_FILE_RATE, SAVE_FILE_BITS, SAVE_FILE_CHANNEL, AUDIO_STREAM_READER);
-    decoder_el = create_mp3_decoder();
-    filter_upsample_el = create_filter_upsample(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL);
-    i2s_stream_writer_el = create_i2s_stream_writer(PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL, AUDIO_STREAM_WRITER);
+    add_element("file_reader", create_fatfs_stream(SAVE_FILE_RATE, SAVE_FILE_BITS, SAVE_FILE_CHANNEL, AUDIO_STREAM_READER));
+    add_element("decoder", create_mp3_decoder());
+    add_element("filter", create_filter_upsample(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL));
+    add_element("i2s_writer", create_i2s_stream_writer(PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL, AUDIO_STREAM_WRITER));
 
-    audio_pipeline_register(pipeline_play, fatfs_reader_el,  "file_reader");
-    audio_pipeline_register(pipeline_play, decoder_el,       "decoder");
-    audio_pipeline_register(pipeline_play, filter_upsample_el,   "filter_upsample");
-    audio_pipeline_register(pipeline_play, i2s_stream_writer_el,        "i2s_writer");
-    //audio_element_set_uri(fatfs_reader_el, "/sdcard/muecke_mit_beute.wav");
-    audio_element_set_uri(fatfs_reader_el, "/sdcard/twinkle_twinkle.wav");
+    for (auto& it : handle_elements){
+        audio_pipeline_register(pipeline_play, it.second, it.first.c_str());
+    }
 
     ESP_LOGI(TAG, "Set up  i2s clock");
-    i2s_stream_set_clk(i2s_stream_writer_el, PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL);
+    i2s_stream_set_clk(handle_elements["i2s_writer"], PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL);
     
     audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
     evt = audio_event_iface_init(&evt_cfg);
@@ -179,24 +181,22 @@ FlexiblePipeline::FlexiblePipeline(){
     audio_event_iface_set_listener(evt_cmd, evt);
 
     ESP_LOGI(TAG, "Start playback pipeline");
-    const char *link_tag[4] = {"file_reader", "decoder", "filter_upsample", "i2s_writer"};
-    audio_pipeline_link(pipeline_play, &link_tag[0], 4);
+    //const char* link_tags[] = {"file_reader", "decoder", "filter", "i2s_writer"};
+    audio_pipeline_link(pipeline_play, link_tags.data(), link_tags.size());
+    //audio_pipeline_link(pipeline_play, link_tags, 4);
 
 }
 FlexiblePipeline::~FlexiblePipeline(){
     audio_pipeline_stop(pipeline_play);
     audio_pipeline_wait_for_stop(pipeline_play);
     audio_pipeline_terminate(pipeline_play);
-    audio_pipeline_unregister_more(pipeline_play, fatfs_reader_el,
-                                   decoder_el,
-                                   filter_upsample_el, i2s_stream_writer_el, NULL);
+    for(auto& it : handle_elements){
+        audio_pipeline_unregister(pipeline_play, it.second);
+        audio_element_deinit(it.second);
+    }
     audio_pipeline_remove_listener(pipeline_play);
     audio_event_iface_destroy(evt);
 
-    audio_element_deinit(fatfs_reader_el);
-    audio_element_deinit(decoder_el);
-    audio_element_deinit(filter_upsample_el);
-    audio_element_deinit(i2s_stream_writer_el);
     audio_pipeline_deinit(pipeline_play);
     
 
@@ -215,21 +215,26 @@ void FlexiblePipeline::loop(){
         ESP_LOGI(TAG, "Receive event : %d", msg.cmd);
 
         if (msg.cmd == MY_APP_START_EVENT_ID) {
-            audio_pipeline_pause(pipeline_play);
-            audio_element_set_uri(fatfs_reader_el, (char *)msg.data);
             ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
-            audio_pipeline_set_listener(pipeline_play, evt);
+            audio_element_set_uri(handle_elements["file_reader"], (char *)msg.data);
+            ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
             audio_pipeline_run(pipeline_play);
             audio_pipeline_resume(pipeline_play);
         } else if(msg.cmd == MY_APP_STOP_EVENT_ID){
             audio_pipeline_pause(pipeline_play);
-        } else if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *) i2s_stream_writer_el
+        } else if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT 
             && msg.cmd == AEL_MSG_CMD_REPORT_STATUS
             && (((int)msg.data == AEL_STATUS_STATE_STOPPED) || ((int)msg.data == AEL_STATUS_STATE_FINISHED))) {
             ESP_LOGW(TAG, "[ * ] Stop event received");
             audio_pipeline_stop(pipeline_play);
-            audio_element_set_uri(fatfs_reader_el, (char *)playlist_next().c_str());
-            ESP_LOGI(TAG, "Changing music to %s", (char *)playlist_next().c_str());
+            audio_pipeline_wait_for_stop(pipeline_play);
+            audio_pipeline_terminate(pipeline_play);
+            const char * music = playlist_next().c_str();
+            ESP_LOGI(TAG, "Changing music to %s", music);
+            audio_element_set_uri(handle_elements["file_reader"], music);
+            audio_pipeline_set_listener(pipeline_play, evt);
+            audio_pipeline_reset_ringbuffer(pipeline_play);
+            audio_pipeline_reset_elements(pipeline_play);
             audio_pipeline_run(pipeline_play);
             break;
         }
@@ -237,6 +242,12 @@ void FlexiblePipeline::loop(){
             free(msg.data);
         }
     }
+}
+
+void FlexiblePipeline::reset(){
+   for (auto& it : handle_elements){
+       audio_element_reset_state(it.second);
+   }
 }
 
 std::string& FlexiblePipeline::playlist_next(){

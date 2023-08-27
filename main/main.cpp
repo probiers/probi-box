@@ -122,7 +122,7 @@ extern "C" void app_main(void)
     audio_board_handle_t board_handle = audio_board_init();
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
 
-    int volume = 100;
+    int volume = 90;
     audio_hal_set_volume(board_handle->audio_hal, volume);
     ESP_LOGI(TAG, "[ * ] Receive music volume=%d",
                 volume);
