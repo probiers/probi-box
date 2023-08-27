@@ -203,6 +203,7 @@ FlexiblePipeline::~FlexiblePipeline(){
 }
 void FlexiblePipeline::loop(){
 
+    bool is_running = false;
     ESP_LOGI(TAG, "Plan music!");
     audio_event_iface_msg_t msg;
     while(1){
@@ -212,15 +213,21 @@ void FlexiblePipeline::loop(){
             ESP_LOGE(TAG, "[ * ] Event interface error : %d", ret);
             continue;
         }
-        ESP_LOGI(TAG, "Receive event : %d", msg.cmd);
+        ESP_LOGI(TAG, "Receive event : %d %d", msg.cmd, (int)msg.data);
 
         if (msg.cmd == MY_APP_START_EVENT_ID) {
-            ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
-            audio_element_set_uri(handle_elements["file_reader"], (char *)msg.data);
-            ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
-            audio_pipeline_set_listener(pipeline_play, evt);
-            audio_pipeline_run(pipeline_play);
-            audio_pipeline_resume(pipeline_play);
+            if (!is_running) {
+                ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
+                audio_element_set_uri(handle_elements["file_reader"], (char *)msg.data);
+                ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
+                audio_pipeline_set_listener(pipeline_play, evt);
+                ESP_LOGI(TAG, "Start music");
+                audio_pipeline_run(pipeline_play);
+                is_running = true;
+            } else {
+                ESP_LOGI(TAG, "Resume music");
+                audio_pipeline_resume(pipeline_play);
+            }
         } else if(msg.cmd == MY_APP_STOP_EVENT_ID){
             audio_pipeline_pause(pipeline_play);
         } else if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT 
@@ -229,13 +236,12 @@ void FlexiblePipeline::loop(){
             ESP_LOGW(TAG, "[ * ] Stop event received");
             audio_pipeline_stop(pipeline_play);
             audio_pipeline_wait_for_stop(pipeline_play);
-            audio_pipeline_terminate(pipeline_play);
+            audio_pipeline_reset_ringbuffer(pipeline_play);
+            audio_pipeline_reset_elements(pipeline_play);
             const char * music = playlist_next().c_str();
             ESP_LOGI(TAG, "Changing music to %s", music);
             audio_element_set_uri(handle_elements["file_reader"], music);
             audio_pipeline_set_listener(pipeline_play, evt);
-            audio_pipeline_reset_ringbuffer(pipeline_play);
-            audio_pipeline_reset_elements(pipeline_play);
             audio_pipeline_run(pipeline_play);
             break;
         }
