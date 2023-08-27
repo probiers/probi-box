@@ -227,6 +227,10 @@ void FlexiblePipeline::loop(){
             && msg.cmd == AEL_MSG_CMD_REPORT_STATUS
             && (((int)msg.data == AEL_STATUS_STATE_STOPPED) || ((int)msg.data == AEL_STATUS_STATE_FINISHED))) {
             ESP_LOGW(TAG, "[ * ] Stop event received");
+            audio_pipeline_stop(pipeline_play);
+            audio_element_set_uri(fatfs_reader_el, (char *)playlist_next().c_str());
+            ESP_LOGI(TAG, "Changing music to %s", (char *)playlist_next().c_str());
+            audio_pipeline_run(pipeline_play);
             break;
         }
         if (msg.need_free_data) {
@@ -235,7 +239,15 @@ void FlexiblePipeline::loop(){
     }
 }
 
-void FlexiblePipeline::read_playlist(std::string& playlist_name){
+std::string& FlexiblePipeline::playlist_next(){
+    playlist_index++;
+    if (playlist_index >= playlist.size()){
+        playlist_index = 0;
+    }
+    return playlist[playlist_index];
+}
+
+void FlexiblePipeline::playlist_read(std::string& playlist_name){
     ESP_LOGI(TAG, "Read playlist %s", playlist_name.c_str());
     std::string line;
     std::ifstream playlist_file ("/sdcard/" + playlist_name + ".txt");
@@ -257,7 +269,7 @@ void FlexiblePipeline::start(std::string&& playlist_name){
         playlist.clear();
         playlist_index = 0;
         curr_playlist_name = playlist_name;
-        read_playlist(playlist_name);
+        playlist_read(playlist_name);
     }
     if (playlist_index >= playlist.size()){
         ESP_LOGE(TAG, "Playlist %s is empty", playlist_name.c_str());

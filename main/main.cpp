@@ -122,6 +122,11 @@ extern "C" void app_main(void)
     audio_board_handle_t board_handle = audio_board_init();
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
 
+    int volume = 100;
+    audio_hal_set_volume(board_handle->audio_hal, volume);
+    ESP_LOGI(TAG, "[ * ] Receive music volume=%d",
+                volume);
+
     rdm6300_handle_t rdm6300_handle = rdm6300_init(13);
     FlexiblePipeline flexible_pipeline{};
     std::thread any_core([&](){flexible_pipeline.loop();});

@@ -30,7 +30,8 @@ class FlexiblePipeline
 
   private:
 
-    void read_playlist(std::string& playlist_name);
+    void playlist_read(std::string& playlist_name);
+    std::string& playlist_next();
 
     audio_pipeline_handle_t pipeline_play = NULL;
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
