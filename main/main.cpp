@@ -20,7 +20,6 @@ extern "C" {
 #include "board.h"
 #include "filter_resample.h"
 #include "esp_peripherals.h"
-#include "periph_wifi.h"
 #include "periph_sdcard.h"
 #include "periph_button.h"
 #include "periph_adc_button.h"
@@ -34,16 +33,36 @@ extern "C" {
 #else
 #include "tcpip_adapter.h"
 #endif
+#include <esp_pthread.h>
 
-extern void app_main(void);
 }
+#include <iostream>
+#include <thread>
+#include <chrono>
+#include <memory>
+#include <string>
+#include <sstream>
+
 #include "flexible_pipeline.hpp"
 
 static const char *TAG = "main";
 static esp_periph_set_handle_t set;
 
-void app_main(void)
+esp_pthread_cfg_t create_config(const char *name, int core_id, int stack, int prio)
 {
+    auto cfg = esp_pthread_get_default_config();
+    cfg.thread_name = name;
+    cfg.pin_to_core = core_id;
+    cfg.stack_size = stack;
+    cfg.prio = prio;
+    return cfg;
+}
+extern "C" void app_main(void)
+{
+     // Create a thread using deafult values that can run on any core
+    auto cfg = esp_pthread_get_default_config();
+    esp_pthread_set_cfg(&cfg);
+
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set("AUDIO_ELEMENT", ESP_LOG_DEBUG);
 
@@ -76,6 +95,7 @@ void app_main(void)
 
     rdm6300_handle_t rdm6300_handle = rdm6300_init(13);
     FlexiblePipeline flexible_pipeline{};
+    std::thread any_core([&](){flexible_pipeline.loop();});
     ESP_LOGI(TAG, "LOOP");
     while(1)
     {
@@ -84,7 +104,7 @@ void app_main(void)
         if(sense_result == RDM6300_SENSE_NEW_TAG)
         {
             ESP_LOGI(TAG, "NEW TAG: %" PRIu64, serial);
-            flexible_pipeline.start("/sdcard/1.mp3");
+            flexible_pipeline.start(std::to_string(serial) + ".mp3");
         }
         else if(sense_result == RDM6300_SENSE_TAG_LOST)
         {

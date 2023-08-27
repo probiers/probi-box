@@ -55,10 +55,35 @@ static const char *TAG = "FLEXIBLE_PIPELINE";
 #define PLAYBACK_CHANNEL    2
 #define PLAYBACK_BITS       16
 
+// Define your own event ID for starting and stopping the pipeline
+#define MY_APP_START_EVENT_ID 1
+#define MY_APP_STOP_EVENT_ID 2
+
+#define RESAMPLE_FILTER_CONFIG() {          \
+        .src_rate = 44100,                          \
+        .src_ch = 2,                                \
+        .dest_rate = 48000,                         \
+        .dest_bits = 16,                            \
+        .dest_ch = 2,                               \
+        .src_bits = 16,                             \
+        .mode = RESAMPLE_DECODE_MODE,               \
+        .max_indata_bytes = RSP_FILTER_BUFFER_BYTE, \
+        .out_len_bytes = RSP_FILTER_BUFFER_BYTE,    \
+        .type = ESP_RESAMPLE_TYPE_AUTO,             \
+        .complexity = 2,                            \
+        .down_ch_idx = 0,                           \
+        .prefer_flag = ESP_RSP_PREFER_TYPE_SPEED,   \
+        .out_rb_size = RSP_FILTER_RINGBUFFER_SIZE,  \
+        .task_stack = RSP_FILTER_TASK_STACK,        \
+        .task_core = RSP_FILTER_TASK_CORE,          \
+        .task_prio = RSP_FILTER_TASK_PRIO,          \
+        .stack_in_ext = true,                       \
+    }
+
 
 audio_element_handle_t FlexiblePipeline::create_filter_upsample(int source_rate, int source_channel, int dest_rate, int dest_channel)
 {
-    rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
+    rsp_filter_cfg_t rsp_cfg = RESAMPLE_FILTER_CONFIG();
     rsp_cfg.src_rate = source_rate;
     rsp_cfg.src_ch = source_channel;
     rsp_cfg.dest_rate = dest_rate;
@@ -147,11 +172,8 @@ void flexible_pipeline_playback(esp_periph_set_handle_t set)
     audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
     audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
     audio_pipeline_set_listener(pipeline_save, evt);
-    audio_event_iface_set_listener(esp_periph_set_get_event_iface(set), evt);
 
 
-    ESP_LOGI(TAG, "[3.3] Set up  uri for save file name");
-    //audio_element_set_uri(fatfs_wr_stream_el, "/sdcard/test_output.mp3");
 
     ESP_LOGI(TAG, "[3.4] Register all elements to pipeline_save");
     audio_pipeline_register(pipeline_save, raw_read_el, "raw");
@@ -224,14 +246,17 @@ FlexiblePipeline::FlexiblePipeline(){
     filter_upsample_el = create_filter_upsample(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL);
     i2s_stream_writer_el = create_i2s_stream_writer(PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL, AUDIO_STREAM_WRITER);
 
-    audio_pipeline_register(pipeline_play, fatfs_reader_el,  "file_wav_reader");
+    audio_pipeline_register(pipeline_play, fatfs_reader_el,  "file_mp3_reader");
     audio_pipeline_register(pipeline_play, mp3_decoder_el,       "mp3_decoder");
     audio_pipeline_register(pipeline_play, filter_upsample_el,   "filter_upsample");
     audio_pipeline_register(pipeline_play, i2s_stream_writer_el,        "i2s_writer");
 
-    // TODO audio_element_set_uri(fatfs_wav_reader_el, "/sdcard/twinkle_twinkle.wav");
     ESP_LOGI(TAG, "Set up  i2s clock");
     i2s_stream_set_clk(i2s_stream_writer_el, PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL);
+    
+    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
+    evt = audio_event_iface_init(&evt_cfg);
+    audio_pipeline_set_listener(pipeline_play, evt);
 
 }
 FlexiblePipeline::~FlexiblePipeline(){
@@ -248,21 +273,64 @@ FlexiblePipeline::~FlexiblePipeline(){
     audio_element_deinit(filter_upsample_el);
     audio_element_deinit(i2s_stream_writer_el);
     audio_pipeline_deinit(pipeline_play);
+    
+    ESP_LOGI(TAG, "Start playback pipeline");
+    const char *link_tag[4] = {"file_wav_reader", "mp3_decoder", "filter_upsample", "i2s_writer"};
+    audio_pipeline_link(pipeline_play, &link_tag[0], 4);
 
+}
+void FlexiblePipeline::loop(){
+    audio_event_iface_msg_t msg;
+    while(1){
+        esp_err_t ret = audio_event_iface_listen(evt, &msg, portMAX_DELAY);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "[ * ] Event interface error : %d", ret);
+            continue;
+        }
+        ESP_LOGE(TAG, "Receive event : %d", msg.cmd);
+
+        if (msg.cmd == MY_APP_START_EVENT_ID) {
+            audio_pipeline_pause(pipeline_play);
+            audio_element_set_uri(fatfs_reader_el, "/sdcard/twinkle_twinkle.mp3");
+            ESP_LOGE(TAG, "Changing music to %s", (char *)msg.data);
+            audio_pipeline_run(pipeline_play);
+            audio_pipeline_resume(pipeline_play);
+        } else if(msg.cmd == MY_APP_STOP_EVENT_ID){
+            audio_pipeline_pause(pipeline_play);
+        }
+        if (msg.need_free_data) {
+            free(msg.data);
+        }
+    }
 }
 
 void FlexiblePipeline::start(std::string filename){
-    ESP_LOGI(TAG, "[Start playback pipeline");
-    const char *link_tag[4] = {"file_wav_reader", "mp3_decoder", "filter_upsample", "i2s_writer"};
-    audio_pipeline_link(pipeline_play, &link_tag[0], 4);
-    audio_pipeline_run(pipeline_play);
-
+    ESP_LOGI(TAG, "[3.3] Start");
+    int data_size = filename.length()+1;
+    void * data = malloc(data_size);
+    strcpy((char *)data, filename.c_str());
+    audio_event_iface_msg_t msg = {
+        .cmd = MY_APP_START_EVENT_ID,
+        .data = data,
+        .data_len = data_size,
+        .source = (void *)this,
+        .source_type = 0,
+        .need_free_data = true,
+    };
+    audio_event_iface_sendout(evt, &msg);
 }
 
 void FlexiblePipeline::stop(){
-    audio_pipeline_stop(pipeline_play);
-    audio_pipeline_wait_for_stop(pipeline_play);
 
+    audio_event_iface_msg_t msg = {
+        .cmd = MY_APP_STOP_EVENT_ID,
+        .data = NULL,
+        .data_len = 0,
+        .source = (void *)this,
+        .source_type = 0,
+        .need_free_data = false,
+    };
+    audio_event_iface_sendout(evt, &msg);
 }
 
 void FlexiblePipeline::pause(){

@@ -15,6 +15,7 @@ class FlexiblePipeline
     FlexiblePipeline();
     ~FlexiblePipeline();
 
+    void loop();
     void start(std::string filename);
     void stop();
     void pause();
@@ -32,6 +33,7 @@ class FlexiblePipeline
     audio_element_handle_t mp3_decoder_el = NULL;
     audio_element_handle_t filter_upsample_el = NULL; 
     audio_element_handle_t i2s_stream_writer_el = NULL;
+    audio_event_iface_handle_t evt = NULL;
 
     
 };
