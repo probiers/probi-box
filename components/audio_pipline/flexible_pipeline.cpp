@@ -26,6 +26,7 @@ extern "C" {
 #include "http_stream.h"
 #include "mp3_decoder.h"
 #include "wav_decoder.h"
+#include "aac_decoder.h"
 #include "raw_stream.h"
 
 #include "board.h"
@@ -61,7 +62,9 @@ static const char *TAG = "FLEXIBLE_PIPELINE";
 
 // Define your own event ID for starting and stopping the pipeline
 #define MY_APP_START_EVENT_ID 100
-#define MY_APP_STOP_EVENT_ID 101
+#define MY_APP_PAUSE_EVENT_ID 101
+#define MY_APP_RESUME_EVENT_ID 102
+#define MY_APP_STOP_EVENT_ID 103
 
 #define RESAMPLE_FILTER_CONFIG() {          \
         .src_rate = 44100,                          \
@@ -137,7 +140,7 @@ audio_element_handle_t FlexiblePipeline::create_wav_decoder()
     return wav_decoder_init(&wav_cfg);
 }
 
-static audio_element_handle_t create_aac_decoder()
+audio_element_handle_t FlexiblePipeline::create_aac_decoder()
 {
     aac_decoder_cfg_t aac_cfg = DEFAULT_AAC_DECODER_CONFIG();
     return aac_decoder_init(&aac_cfg);
@@ -161,20 +164,15 @@ static audio_element_handle_t create_raw_stream()
     return raw_stream;
 }
 
-void FlexiblePipeline::add_element(const char* name, audio_element_handle_t handle, bool link = true){
+void FlexiblePipeline::add_element(const char* name, audio_element_handle_t handle, bool link ){
     if(link){
         link_tags.push_back(name);
     }
     handle_elements[name] = handle;
 }
 
-enum class DecoderType{
-    MP3,
-    ACC,
-    WAV
-};
 
-void FlexiblePipeline::link_pipeline(DecoderType type){
+void FlexiblePipeline::link_pipeline(FlexiblePipeline::DecoderType type){
     auto old_decoder = link_tags[1];
     switch(type){
         case DecoderType::MP3:
@@ -188,7 +186,7 @@ void FlexiblePipeline::link_pipeline(DecoderType type){
             break;
     }
     if(old_decoder != link_tags[1]){
-        audio_pipeline_breakup_elements(pipeline_play, old_decoder);
+        audio_pipeline_breakup_elements(pipeline_play, handle_elements[old_decoder]);
         audio_pipeline_relink(pipeline_play, link_tags.data(), link_tags.size());
     }
     else{
@@ -200,7 +198,7 @@ FlexiblePipeline::FlexiblePipeline(){
     pipeline_play = audio_pipeline_init(&pipeline_cfg);
     add_element("file_reader", create_fatfs_stream(SAVE_FILE_RATE, SAVE_FILE_BITS, SAVE_FILE_CHANNEL, AUDIO_STREAM_READER));
     add_element("mp3_decoder", create_mp3_decoder());
-    add_element("acc_decoder", create_acc_decoder(), false);
+    add_element("acc_decoder", create_aac_decoder(), false);
     add_element("wav_decoder", create_wav_decoder(), false);
     add_element("filter", create_filter_upsample(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL));
     add_element("i2s_writer", create_i2s_stream_writer(PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL, AUDIO_STREAM_WRITER));
@@ -240,18 +238,6 @@ FlexiblePipeline::~FlexiblePipeline(){
 
 }
 
-void FlexiblePipeline::start_pipeline(){
-    ESP_LOGW(TAG, "[ * ] Start pipeline");
-    audio_pipeline_set_listener(pipeline_play, evt);
-    audio_pipeline_run(pipeline_play);
-}
-
-void FlexiblePipeline::resume_pipeline(){
-    ESP_LOGW(TAG, "[ * ] Resume pipeline");
-    audio_pipeline_set_listener(pipeline_play, evt);
-    audio_pipeline_resume(pipeline_play);
-}
-
 void FlexiblePipeline::stop_pipeline(){
     ESP_LOGW(TAG, "[ * ] Stop pipeline");
     audio_pipeline_stop(pipeline_play);
@@ -261,7 +247,7 @@ void FlexiblePipeline::stop_pipeline(){
     audio_pipeline_reset_elements(pipeline_play);
 }
 
-DecoderType FlexiblePipeline::getFileType(const char* filename){
+FlexiblePipeline::DecoderType FlexiblePipeline::getFileType(const char* filename){
     std::string file(filename);
     std::string ext = file.substr(file.find_last_of(".") + 1);
     if (ext == "mp3"){
@@ -279,32 +265,22 @@ DecoderType FlexiblePipeline::getFileType(const char* filename){
     }
 }
 
-void FlexiblePipeline::play_file(const char* filename, bool start_pipeline = false){
+void FlexiblePipeline::play_file(const char* filename){
     ESP_LOGI(TAG, "Play file %s", filename);
 
     auto codec_type = getFileType(filename);
 
-    const char * old_decoder = link_tags[1];
-
-    if(not start_pipeline){
-        audio_pipeline_pause(pipeline_play);
-    }
-
     audio_element_set_uri(handle_elements["file_reader"], filename);
 
     link_pipeline(codec_type);
+    audio_pipeline_set_listener(pipeline_play, evt);
 
-    if(start_pipeline){
-        start_pipeline();
-    }
-    else{
-        resume_pipeline();
-    }
+        ESP_LOGW(TAG, "[ * ] Start pipeline");
+        audio_pipeline_run(pipeline_play);
 }
 
 void FlexiblePipeline::loop(){
 
-    bool is_running = false;
     ESP_LOGI(TAG, "Plan music!");
     audio_event_iface_msg_t msg;
     while(1){
@@ -318,15 +294,14 @@ void FlexiblePipeline::loop(){
 
         if (msg.cmd == MY_APP_START_EVENT_ID) {
             ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
-            if (!is_running) {
-                play_file((char *)msg.data, true);
-                is_running = true;
-            } else {
-                ESP_LOGI(TAG, "Resume music");
-                audio_pipeline_resume(pipeline_play);
-            }
-        } else if(msg.cmd == MY_APP_STOP_EVENT_ID){
+            play_file((char *)msg.data);
+        } else if (msg.cmd == MY_APP_PAUSE_EVENT_ID) {
+            ESP_LOGI(TAG, "Resume music");
+            audio_pipeline_resume(pipeline_play);
+        } else if(msg.cmd == MY_APP_PAUSE_EVENT_ID){
             audio_pipeline_pause(pipeline_play);
+        } else if(msg.cmd == MY_APP_STOP_EVENT_ID){
+            stop_pipeline(); 
         } else if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT 
             && msg.cmd == AEL_MSG_CMD_REPORT_STATUS
             && (((int)msg.data == AEL_STATUS_STATE_STOPPED) || ((int)msg.data == AEL_STATUS_STATE_FINISHED))) {
@@ -366,28 +341,56 @@ void FlexiblePipeline::playlist_read(std::string& playlist_name){
 }
 
 void FlexiblePipeline::start(std::string&& playlist_name){
+    void * data = NULL;
+    int data_size = 0;
     ESP_LOGI(TAG, "Start %s", playlist_name.c_str());
     if (curr_playlist_name != playlist_name){
         playlist.clear();
         playlist_index = 0;
         curr_playlist_name = playlist_name;
         playlist_read(playlist_name);
+        if (playlist_index >= playlist.size()){
+            ESP_LOGE(TAG, "Playlist %s is empty", playlist_name.c_str());
+            return;
+        }
+        std::string& filename = playlist[playlist_index];
+        data_size = filename.length()+1;
+        data = malloc(data_size);
+        strcpy((char *)data, filename.c_str());
     }
-    if (playlist_index >= playlist.size()){
-        ESP_LOGE(TAG, "Playlist %s is empty", playlist_name.c_str());
-        return;
-    }
-    std::string& filename = playlist[playlist_index];
-    int data_size = filename.length()+1;
-    void * data = malloc(data_size);
-    strcpy((char *)data, filename.c_str());
     audio_event_iface_msg_t msg = {
         .cmd = MY_APP_START_EVENT_ID,
         .data = data,
         .data_len = data_size,
         .source = (void *)this,
         .source_type = 0,
-        .need_free_data = true,
+        .need_free_data = data_size>0,
+    };
+    audio_event_iface_sendout(evt_cmd, &msg);
+}
+
+void FlexiblePipeline::pause(){
+
+    audio_event_iface_msg_t msg = {
+        .cmd = MY_APP_PAUSE_EVENT_ID,
+        .data = NULL,
+        .data_len = 0,
+        .source = (void *)this,
+        .source_type = 0,
+        .need_free_data = false,
+    };
+    audio_event_iface_sendout(evt_cmd, &msg);
+}
+
+void FlexiblePipeline::resume(){
+
+    audio_event_iface_msg_t msg = {
+        .cmd = MY_APP_RESUME_EVENT_ID,
+        .data = NULL,
+        .data_len = 0,
+        .source = (void *)this,
+        .source_type = 0,
+        .need_free_data = false,
     };
     audio_event_iface_sendout(evt_cmd, &msg);
 }
@@ -403,14 +406,4 @@ void FlexiblePipeline::stop(){
         .need_free_data = false,
     };
     audio_event_iface_sendout(evt_cmd, &msg);
-}
-
-void FlexiblePipeline::pause(){
-    audio_pipeline_pause(pipeline_play);
-
-}
-
-void FlexiblePipeline::resume(){
-    audio_pipeline_resume(pipeline_play);
-
 }

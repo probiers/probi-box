@@ -25,6 +25,7 @@ class FlexiblePipeline
 
     static audio_element_handle_t create_fatfs_stream(int sample_rates, int bits, int channels, audio_stream_type_t type);
     static audio_element_handle_t create_mp3_decoder();
+    static audio_element_handle_t create_aac_decoder();
     static audio_element_handle_t create_wav_decoder();
     static audio_element_handle_t create_filter_upsample(int source_rate, int source_channel, int dest_rate, int dest_channel);
     static audio_element_handle_t create_i2s_stream_writer(int sample_rates, int bits, int channels, audio_stream_type_t type);
@@ -36,12 +37,10 @@ class FlexiblePipeline
         WAV
     };
     void link_pipeline(DecoderType type);
-    void play_file(const char* filename, bool start_pipeline = false);
-    DecoderType getFileType(const char* filename);
-    void start_pipeline();
     void stop_pipeline();
-    void add_element(const char* name, audio_element_handle_t handle);
-    void reset();
+    void play_file(const char* filename);
+    DecoderType getFileType(const char* filename);
+    void add_element(const char* name, audio_element_handle_t handle, bool link = true);
     void playlist_read(std::string& playlist_name);
     std::string& playlist_next();
 

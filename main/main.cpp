@@ -138,19 +138,26 @@ extern "C" void app_main(void)
     std::thread any_core([&](){flexible_pipeline.loop();});
     std::thread file_server([&]{example_start_file_server("/sdcard");});
     ESP_LOGI(TAG, "LOOP");
+    uint64_t old_serial = 0;
     while(1)
     {
-        uint64_t serial;
+        uint64_t serial = 0;
         enum rdm6300_sense_result sense_result = rdm630_sense(&rdm6300_handle, &serial);
         if(sense_result == RDM6300_SENSE_NEW_TAG)
         {
             ESP_LOGI(TAG, "NEW TAG: %" PRIu64, serial);
-            flexible_pipeline.start(std::to_string(serial));
+            if (old_serial != serial) {
+                flexible_pipeline.stop();
+                flexible_pipeline.start(std::to_string(serial));
+                old_serial = serial;
+            } else{
+                flexible_pipeline.resume();
+            }
         }
         else if(sense_result == RDM6300_SENSE_TAG_LOST)
         {
             ESP_LOGI(TAG, "TAG LOST: %" PRIu64, serial);
-            flexible_pipeline.stop();
+            flexible_pipeline.pause();
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
