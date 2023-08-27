@@ -30,7 +30,14 @@ class FlexiblePipeline
     static audio_element_handle_t create_i2s_stream_writer(int sample_rates, int bits, int channels, audio_stream_type_t type);
 
   private:
-
+    enum class DecoderType{
+        MP3,
+        ACC,
+        WAV
+    };
+    void link_pipeline(DecoderType type);
+    void play_file(const char* filename, bool start_pipeline = false);
+    DecoderType getFileType(const char* filename);
     void start_pipeline();
     void stop_pipeline();
     void add_element(const char* name, audio_element_handle_t handle);
