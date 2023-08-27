@@ -167,8 +167,8 @@ FlexiblePipeline::FlexiblePipeline(){
     add_element("filter", create_filter_upsample(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL));
     add_element("i2s_writer", create_i2s_stream_writer(PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL, AUDIO_STREAM_WRITER));
 
-    for (auto& it : handle_elements){
-        audio_pipeline_register(pipeline_play, it.second, it.first.c_str());
+    for (auto& it : link_tags){
+        audio_pipeline_register(pipeline_play, handle_elements[it], it);
     }
 
     ESP_LOGI(TAG, "Set up  i2s clock");
@@ -190,9 +190,9 @@ FlexiblePipeline::~FlexiblePipeline(){
     audio_pipeline_stop(pipeline_play);
     audio_pipeline_wait_for_stop(pipeline_play);
     audio_pipeline_terminate(pipeline_play);
-    for(auto& it : handle_elements){
-        audio_pipeline_unregister(pipeline_play, it.second);
-        audio_element_deinit(it.second);
+    for (auto& it : link_tags){
+        audio_pipeline_unregister(pipeline_play, handle_elements[it]);
+        audio_element_deinit(handle_elements[it]);
     }
     audio_pipeline_remove_listener(pipeline_play);
     audio_event_iface_destroy(evt);
