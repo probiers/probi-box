@@ -14,6 +14,7 @@ extern "C" {
 #include "freertos/timers.h"
 
 #include "esp_log.h"
+#include "esp_event.h"
 #include "sdkconfig.h"
 #include "nvs_flash.h"
 
@@ -109,6 +110,8 @@ extern "C" void app_main(void)
 #else
     tcpip_adapter_init();
 #endif
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    ESP_ERROR_CHECK(example_connect());
 
     // Initialize peripherals management
     esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
@@ -129,7 +132,6 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "[ * ] Receive music volume=%d",
                 volume);
 
-    ESP_ERROR_CHECK(example_connect());
 
     rdm6300_handle_t rdm6300_handle = rdm6300_init(13);
     FlexiblePipeline flexible_pipeline{};
