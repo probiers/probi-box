@@ -14,6 +14,7 @@ extern "C" {
 #include "freertos/timers.h"
 
 #include "esp_log.h"
+#include "esp_event.h"
 #include "sdkconfig.h"
 #include "nvs_flash.h"
 
@@ -109,6 +110,8 @@ extern "C" void app_main(void)
 #else
     tcpip_adapter_init();
 #endif
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    ESP_ERROR_CHECK(example_connect());
 
     // Initialize peripherals management
     esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
@@ -129,26 +132,32 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "[ * ] Receive music volume=%d",
                 volume);
 
-    ESP_ERROR_CHECK(example_connect());
 
     rdm6300_handle_t rdm6300_handle = rdm6300_init(13);
     FlexiblePipeline flexible_pipeline{};
     std::thread any_core([&](){flexible_pipeline.loop();});
     std::thread file_server([&]{example_start_file_server("/sdcard");});
     ESP_LOGI(TAG, "LOOP");
+    uint64_t old_serial = 0;
     while(1)
     {
-        uint64_t serial;
+        uint64_t serial = 0;
         enum rdm6300_sense_result sense_result = rdm630_sense(&rdm6300_handle, &serial);
         if(sense_result == RDM6300_SENSE_NEW_TAG)
         {
             ESP_LOGI(TAG, "NEW TAG: %" PRIu64, serial);
-            flexible_pipeline.start(std::to_string(serial));
+            if (old_serial != serial) {
+                flexible_pipeline.stop();
+                flexible_pipeline.start(std::to_string(serial));
+                old_serial = serial;
+            } else{
+                flexible_pipeline.resume();
+            }
         }
         else if(sense_result == RDM6300_SENSE_TAG_LOST)
         {
             ESP_LOGI(TAG, "TAG LOST: %" PRIu64, serial);
-            flexible_pipeline.stop();
+            flexible_pipeline.pause();
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
