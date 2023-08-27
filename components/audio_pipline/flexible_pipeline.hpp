@@ -8,6 +8,7 @@ extern "C" {
 }
 
 #include <string>
+#include <vector>
 
 class FlexiblePipeline
 {
@@ -16,7 +17,7 @@ class FlexiblePipeline
     ~FlexiblePipeline();
 
     void loop();
-    void start(std::string filename);
+    void start(std::string&& filename);
     void stop();
     void pause();
     void resume();
@@ -28,6 +29,9 @@ class FlexiblePipeline
     static audio_element_handle_t create_i2s_stream_writer(int sample_rates, int bits, int channels, audio_stream_type_t type);
 
   private:
+
+    void read_playlist(std::string& playlist_name);
+
     audio_pipeline_handle_t pipeline_play = NULL;
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
     audio_element_handle_t fatfs_reader_el = NULL;
@@ -36,6 +40,9 @@ class FlexiblePipeline
     audio_element_handle_t i2s_stream_writer_el = NULL;
     audio_event_iface_handle_t evt = NULL;
     audio_event_iface_handle_t evt_cmd = NULL;
+    std::vector <std::string> playlist;
+    int playlist_index = 0;
+    std::string curr_playlist_name = "";
 
     
 };

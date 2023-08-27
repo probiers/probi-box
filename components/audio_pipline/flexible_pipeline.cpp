@@ -12,6 +12,7 @@ extern "C" {
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include "fcntl.h"
 
 #include "esp_log.h"
 #include "sdkconfig.h"
@@ -44,6 +45,9 @@ extern "C" {
 #include "tcpip_adapter.h"
 #endif
 }
+ 
+#include <iostream>
+#include <fstream>
 
 static const char *TAG = "FLEXIBLE_PIPELINE";
 
@@ -154,7 +158,7 @@ static audio_element_handle_t create_raw_stream()
 FlexiblePipeline::FlexiblePipeline(){
     pipeline_play = audio_pipeline_init(&pipeline_cfg);
     fatfs_reader_el = create_fatfs_stream(SAVE_FILE_RATE, SAVE_FILE_BITS, SAVE_FILE_CHANNEL, AUDIO_STREAM_READER);
-    decoder_el = create_wav_decoder();
+    decoder_el = create_mp3_decoder();
     filter_upsample_el = create_filter_upsample(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL);
     i2s_stream_writer_el = create_i2s_stream_writer(PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL, AUDIO_STREAM_WRITER);
 
@@ -170,7 +174,6 @@ FlexiblePipeline::FlexiblePipeline(){
     
     audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
     evt = audio_event_iface_init(&evt_cfg);
-    audio_pipeline_set_listener(pipeline_play, evt);
 
     evt_cmd = audio_event_iface_init(&evt_cfg);
     audio_event_iface_set_listener(evt_cmd, evt);
@@ -201,7 +204,6 @@ FlexiblePipeline::~FlexiblePipeline(){
 void FlexiblePipeline::loop(){
 
     ESP_LOGI(TAG, "Plan music!");
-    audio_pipeline_run(pipeline_play);
     audio_event_iface_msg_t msg;
     while(1){
         ESP_LOGI(TAG, "LOOP");
@@ -214,12 +216,18 @@ void FlexiblePipeline::loop(){
 
         if (msg.cmd == MY_APP_START_EVENT_ID) {
             audio_pipeline_pause(pipeline_play);
-            audio_element_set_uri(fatfs_reader_el, "/sdcard/muecke_mit_beute.mp3");
+            audio_element_set_uri(fatfs_reader_el, (char *)msg.data);
             ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
+            audio_pipeline_set_listener(pipeline_play, evt);
             audio_pipeline_run(pipeline_play);
             audio_pipeline_resume(pipeline_play);
         } else if(msg.cmd == MY_APP_STOP_EVENT_ID){
             audio_pipeline_pause(pipeline_play);
+        } else if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *) i2s_stream_writer_el
+            && msg.cmd == AEL_MSG_CMD_REPORT_STATUS
+            && (((int)msg.data == AEL_STATUS_STATE_STOPPED) || ((int)msg.data == AEL_STATUS_STATE_FINISHED))) {
+            ESP_LOGW(TAG, "[ * ] Stop event received");
+            break;
         }
         if (msg.need_free_data) {
             free(msg.data);
@@ -227,8 +235,34 @@ void FlexiblePipeline::loop(){
     }
 }
 
-void FlexiblePipeline::start(std::string filename){
-    ESP_LOGI(TAG, "Start");
+void FlexiblePipeline::read_playlist(std::string& playlist_name){
+    ESP_LOGI(TAG, "Read playlist %s", playlist_name.c_str());
+    std::string line;
+    std::ifstream playlist_file ("/sdcard/" + playlist_name + ".txt");
+    if (playlist_file.is_open())
+    {
+        while ( getline (playlist_file,line) )
+        {
+            ESP_LOGI(TAG, "Read line %s", line.c_str());
+            playlist.push_back("/sdcard/"+line);
+        }
+        playlist_file.close();
+    }
+    else ESP_LOGE(TAG, "Unable to open file");
+}
+
+void FlexiblePipeline::start(std::string&& playlist_name){
+    ESP_LOGI(TAG, "Start %s", playlist_name.c_str());
+    if (curr_playlist_name != playlist_name){
+        playlist.clear();
+        playlist_index = 0;
+        curr_playlist_name = playlist_name;
+        read_playlist(playlist_name);
+    }
+    if (playlist_index >= playlist.size()){
+        ESP_LOGE(TAG, "Playlist %s is empty", playlist_name.c_str());
+    }
+    std::string& filename = playlist[playlist_index];
     int data_size = filename.length()+1;
     void * data = malloc(data_size);
     strcpy((char *)data, filename.c_str());

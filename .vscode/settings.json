@@ -7,7 +7,8 @@
   ],
   "files.associations": {
     "audio_element.h": "c",
-    "periph_sdcard.h": "c"
+    "periph_sdcard.h": "c",
+    "fatfs_stream.h": "c"
   },
   "cmake.configureOnOpen": false,
 }
