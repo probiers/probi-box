@@ -28,6 +28,8 @@ extern "C" {
 
 #include "audio_idf_version.h"
 #include "rfid_reader.h"
+#include "file_server.h"
+#include "protocol_common.h"
 
 #if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 1, 0))
 #include "esp_netif.h"
@@ -127,9 +129,12 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "[ * ] Receive music volume=%d",
                 volume);
 
+    ESP_ERROR_CHECK(example_connect());
+
     rdm6300_handle_t rdm6300_handle = rdm6300_init(13);
     FlexiblePipeline flexible_pipeline{};
     std::thread any_core([&](){flexible_pipeline.loop();});
+    std::thread file_server([&]{example_start_file_server("/sdcard");});
     ESP_LOGI(TAG, "LOOP");
     while(1)
     {

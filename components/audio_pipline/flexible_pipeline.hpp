@@ -31,6 +31,8 @@ class FlexiblePipeline
 
   private:
 
+    void start_pipeline();
+    void stop_pipeline();
     void add_element(const char* name, audio_element_handle_t handle);
     void reset();
     void playlist_read(std::string& playlist_name);

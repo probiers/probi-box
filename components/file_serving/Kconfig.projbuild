@@ -1,0 +1,15 @@
+menu "HTTP file_serving example menu"
+    
+    config WIFI_SSID
+        string "WiFi SSID"
+        default "wurKG"
+        help
+            SSID (network name) for the example to connect to.
+
+    config WIFI_PASSWORD
+        string "WiFi Password"
+        default "airwaveslogitech410"
+        help
+            WiFi password (WPA or WPA2) for the example to use.
+
+endmenu
