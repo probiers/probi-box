@@ -169,6 +169,7 @@ void FlexiblePipeline::add_element(const char* name, audio_element_handle_t hand
         link_tags.push_back(name);
     }
     handle_elements[name] = handle;
+    audio_pipeline_register(pipeline_play, handle_elements[name], name);
 }
 
 
@@ -203,10 +204,6 @@ FlexiblePipeline::FlexiblePipeline(){
     add_element("filter", create_filter_upsample(SAVE_FILE_RATE, SAVE_FILE_CHANNEL, PLAYBACK_RATE, PLAYBACK_CHANNEL));
     add_element("i2s_writer", create_i2s_stream_writer(PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL, AUDIO_STREAM_WRITER));
 
-    for (auto& it : link_tags){
-        audio_pipeline_register(pipeline_play, handle_elements[it], it);
-    }
-
     ESP_LOGI(TAG, "Set up  i2s clock");
     i2s_stream_set_clk(handle_elements["i2s_writer"], PLAYBACK_RATE, PLAYBACK_BITS, PLAYBACK_CHANNEL);
     
@@ -217,7 +214,6 @@ FlexiblePipeline::FlexiblePipeline(){
     audio_event_iface_set_listener(evt_cmd, evt);
 
     ESP_LOGI(TAG, "Start playback pipeline");
-    //const char* link_tags[] = {"file_reader", "decoder", "filter", "i2s_writer"};
     link_pipeline(DecoderType::MP3);
     //audio_pipeline_link(pipeline_play, link_tags, 4);
 
@@ -226,9 +222,9 @@ FlexiblePipeline::~FlexiblePipeline(){
     audio_pipeline_stop(pipeline_play);
     audio_pipeline_wait_for_stop(pipeline_play);
     audio_pipeline_terminate(pipeline_play);
-    for (auto& it : link_tags){
-        audio_pipeline_unregister(pipeline_play, handle_elements[it]);
-        audio_element_deinit(handle_elements[it]);
+    for (auto& it : handle_elements){
+        audio_pipeline_unregister(pipeline_play, it.second);
+        audio_element_deinit(it.second);
     }
     audio_pipeline_remove_listener(pipeline_play);
     audio_event_iface_destroy(evt);
@@ -242,7 +238,7 @@ void FlexiblePipeline::stop_pipeline(){
     ESP_LOGW(TAG, "[ * ] Stop pipeline");
     audio_pipeline_stop(pipeline_play);
     audio_pipeline_wait_for_stop(pipeline_play);
-    audio_pipeline_terminate(pipeline_play);
+    //audio_pipeline_terminate(pipeline_play);
     audio_pipeline_reset_ringbuffer(pipeline_play);
     audio_pipeline_reset_elements(pipeline_play);
 }
@@ -275,8 +271,8 @@ void FlexiblePipeline::play_file(const char* filename){
     link_pipeline(codec_type);
     audio_pipeline_set_listener(pipeline_play, evt);
 
-        ESP_LOGW(TAG, "[ * ] Start pipeline");
-        audio_pipeline_run(pipeline_play);
+    ESP_LOGW(TAG, "[ * ] Start pipeline");
+    audio_pipeline_run(pipeline_play);
 }
 
 void FlexiblePipeline::loop(){
@@ -295,7 +291,7 @@ void FlexiblePipeline::loop(){
         if (msg.cmd == MY_APP_START_EVENT_ID) {
             ESP_LOGI(TAG, "Changing music to %s", (char *)msg.data);
             play_file((char *)msg.data);
-        } else if (msg.cmd == MY_APP_PAUSE_EVENT_ID) {
+        } else if (msg.cmd == MY_APP_RESUME_EVENT_ID) {
             ESP_LOGI(TAG, "Resume music");
             audio_pipeline_resume(pipeline_play);
         } else if(msg.cmd == MY_APP_PAUSE_EVENT_ID){
