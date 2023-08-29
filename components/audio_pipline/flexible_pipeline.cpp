@@ -238,7 +238,7 @@ void FlexiblePipeline::stop_pipeline(){
     ESP_LOGW(TAG, "[ * ] Stop pipeline");
     audio_pipeline_stop(pipeline_play);
     audio_pipeline_wait_for_stop(pipeline_play);
-    //audio_pipeline_terminate(pipeline_play);
+    audio_pipeline_terminate(pipeline_play);
     audio_pipeline_reset_ringbuffer(pipeline_play);
     audio_pipeline_reset_elements(pipeline_play);
 }
@@ -297,14 +297,21 @@ void FlexiblePipeline::loop(){
         } else if(msg.cmd == MY_APP_PAUSE_EVENT_ID){
             audio_pipeline_pause(pipeline_play);
         } else if(msg.cmd == MY_APP_STOP_EVENT_ID){
-            stop_pipeline(); 
+            //stop_pipeline(); 
         } else if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT 
             && msg.cmd == AEL_MSG_CMD_REPORT_STATUS
-            && (((int)msg.data == AEL_STATUS_STATE_STOPPED) || ((int)msg.data == AEL_STATUS_STATE_FINISHED))) {
-            stop_pipeline();
-            const char * music = playlist_next().c_str();
-            ESP_LOGI(TAG, "Changing music to %s", music);
-            play_file(music);
+            ){
+            if ((int)msg.data == AEL_STATUS_STATE_STOPPED) {
+                const char * music = playlist_next().c_str();
+                ESP_LOGI(TAG, "Changing music to %s", music);
+                play_file(music);
+            }
+            else if ((int)msg.data == AEL_STATUS_STATE_FINISHED) {
+                stop_pipeline();
+                const char * music = playlist_next().c_str();
+                ESP_LOGI(TAG, "Changing music to %s", music);
+                play_file(music);
+            }
         }
         if (msg.need_free_data) {
             free(msg.data);
