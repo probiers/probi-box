@@ -110,8 +110,6 @@ extern "C" void app_main(void)
 #else
     tcpip_adapter_init();
 #endif
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    ESP_ERROR_CHECK(example_connect());
 
     // Initialize peripherals management
     esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
@@ -136,7 +134,25 @@ extern "C" void app_main(void)
     rdm6300_handle_t rdm6300_handle = rdm6300_init(13);
     FlexiblePipeline flexible_pipeline{};
     std::thread any_core([&](){flexible_pipeline.loop();});
-    std::thread file_server([&]{example_start_file_server("/sdcard");});
+    std::thread wifi([&]{
+
+        esp_event_loop_create_default();
+        event_loop_run = true;
+        ESP_ERROR_CHECK(example_connect());
+        while(1)
+        {   
+            // TODO check if event_loop_run is atomic
+            if(!event_loop_run)
+            {
+                ESP_LOGI(TAG, "LOOP BREAK");
+                break;
+            }
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        }
+    });
+
+    std::thread file_server([&]{
+        example_start_file_server("/sdcard");});
     ESP_LOGI(TAG, "LOOP");
     uint64_t old_serial = 0;
     while(1)
