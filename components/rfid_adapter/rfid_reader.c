@@ -12,8 +12,6 @@
 #include "esp_log.h"
 #include "sdkconfig.h"
 
-#include "rc522.h" // FIXME: cannot remove this, otherwise I get LOGI errors
-
 static const char *TAG = "RFID_READER";
 #include "esp_system.h"
 #include "rfid_reader.h"
