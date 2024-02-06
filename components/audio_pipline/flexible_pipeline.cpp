@@ -319,7 +319,8 @@ void FlexiblePipeline::loop(){
     }
 }
 
-std::string& FlexiblePipeline::playlist_next(){
+std::string FlexiblePipeline::playlist_next(){
+    const std::lock_guard<std::mutex> lock(playlist_mutex);
     playlist_index++;
     if (playlist_index >= playlist.size()){
         playlist_index = 0;
@@ -328,6 +329,7 @@ std::string& FlexiblePipeline::playlist_next(){
 }
 
 void FlexiblePipeline::playlist_read(std::string& playlist_name){
+    const std::lock_guard<std::mutex> lock(playlist_mutex);
     ESP_LOGI(TAG, "Read playlist %s", playlist_name.c_str());
     std::string line;
     std::ifstream playlist_file ("/sdcard/" + playlist_name + ".txt");
@@ -343,6 +345,14 @@ void FlexiblePipeline::playlist_read(std::string& playlist_name){
     else ESP_LOGE(TAG, "Unable to open file");
 }
 
+std::string FlexiblePipeline::playlist_current_song(){
+    const std::lock_guard<std::mutex> lock(playlist_mutex);
+    if(playlist_index >= playlist.size()){
+        return "";
+    }
+    return playlist[playlist_index];
+}
+
 void FlexiblePipeline::start(std::string&& playlist_name){
     void * data = NULL;
     int data_size = 0;
@@ -352,15 +362,15 @@ void FlexiblePipeline::start(std::string&& playlist_name){
         playlist_index = 0;
         curr_playlist_name = playlist_name;
         playlist_read(playlist_name);
-        if (playlist_index >= playlist.size()){
-            ESP_LOGE(TAG, "Playlist %s is empty", playlist_name.c_str());
-            return;
-        }
-        std::string& filename = playlist[playlist_index];
-        data_size = filename.length()+1;
-        data = malloc(data_size);
-        strcpy((char *)data, filename.c_str());
     }
+    auto filename = playlist_current_song();
+    if(filename == "") {
+        ESP_LOGE(TAG, "Playlist %s ended", playlist_name.c_str());
+        return;
+    }
+    data_size = filename.length()+1;
+    data = malloc(data_size);
+    strcpy((char *)data, filename.c_str());
     audio_event_iface_msg_t msg = {
         .cmd = MY_APP_START_EVENT_ID,
         .data = data,

@@ -10,6 +10,7 @@ extern "C" {
 #include <string>
 #include <vector>
 #include <map>
+#include <mutex>
 
 class FlexiblePipeline
 {
@@ -41,8 +42,11 @@ class FlexiblePipeline
     void play_file(const char* filename);
     DecoderType getFileType(const char* filename);
     void add_element(const char* name, audio_element_handle_t handle, bool link = true);
+
     void playlist_read(std::string& playlist_name);
-    std::string& playlist_next();
+    std::string playlist_next();
+    /// Empty string if playlist is empty or ended
+    std::string playlist_current_song();
 
     audio_pipeline_handle_t pipeline_play = NULL;
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
@@ -50,9 +54,11 @@ class FlexiblePipeline
     std::vector<const char*> link_tags;
     audio_event_iface_handle_t evt = NULL;
     audio_event_iface_handle_t evt_cmd = NULL;
+
     std::vector <std::string> playlist;
     int playlist_index = 0;
     std::string curr_playlist_name = "";
+    std::mutex playlist_mutex;
 
     
 };
