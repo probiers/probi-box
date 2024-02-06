@@ -146,23 +146,23 @@ audio_element_handle_t FlexiblePipeline::create_aac_decoder()
     return aac_decoder_init(&aac_cfg);
 }
 
-static audio_element_handle_t create_http_stream(const char *url)
-{
-    http_stream_cfg_t http_cfg = HTTP_STREAM_CFG_DEFAULT();
-    http_cfg.multi_out_num = 1;
-    audio_element_handle_t http_stream = http_stream_init(&http_cfg);
-    mem_assert(http_stream);
-    audio_element_set_uri(http_stream, url);
-    return http_stream;
-}
+//static audio_element_handle_t create_http_stream(const char *url)
+//{
+//    http_stream_cfg_t http_cfg = HTTP_STREAM_CFG_DEFAULT();
+//    http_cfg.multi_out_num = 1;
+//    audio_element_handle_t http_stream = http_stream_init(&http_cfg);
+//    mem_assert(http_stream);
+//    audio_element_set_uri(http_stream, url);
+//    return http_stream;
+//}
 
-static audio_element_handle_t create_raw_stream()
-{
-    raw_stream_cfg_t raw_cfg = RAW_STREAM_CFG_DEFAULT();
-    raw_cfg.type = AUDIO_STREAM_WRITER;
-    audio_element_handle_t raw_stream = raw_stream_init(&raw_cfg);
-    return raw_stream;
-}
+//static audio_element_handle_t create_raw_stream()
+//{
+//    raw_stream_cfg_t raw_cfg = RAW_STREAM_CFG_DEFAULT();
+//    raw_cfg.type = AUDIO_STREAM_WRITER;
+//    audio_element_handle_t raw_stream = raw_stream_init(&raw_cfg);
+//    return raw_stream;
+//}
 
 void FlexiblePipeline::add_element(const char* name, audio_element_handle_t handle, bool link ){
     if(link){
